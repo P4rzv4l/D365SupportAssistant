@@ -1,0 +1,64 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0-windows10.0.17763.0</TargetFramework>
+		<OutputType>WinExe</OutputType>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<UseWPF>true</UseWPF>
+		<RootNamespace>D365Assistant</RootNamespace>
+		<AssemblyName>D365SupportAssistant</AssemblyName>
+		<ApplicationIcon>App\Assets\logo-roxo.ico</ApplicationIcon>
+	</PropertyGroup>
+
+	<ItemGroup>
+	  <None Remove="App\Assets\logo-branco.ico" />
+	  <None Remove="App\Assets\logo-preto.ico" />
+	  <None Remove="App\Assets\logo-roxo.ico" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ApplicationDefinition Include="App\App.xaml">
+			<Generator>MSBuild:Compile</Generator>
+			<SubType>Designer</SubType>
+		</ApplicationDefinition>
+	</ItemGroup>
+
+	<ItemGroup>
+		<Folder Include="App\Controls\" />
+		<Folder Include="App\Styles\" />
+	</ItemGroup>
+
+	<!-- ✅ None em vez de Content — copia garantida em projetos WPF -->
+	<ItemGroup>
+		<None Include="App\appsettings.json">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Identity.Client" Version="4.61.3" />
+		<PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
+		<PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.3" />
+		<PackageReference Include="Serilog" Version="4.0.0" />
+		<PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
+		<PackageReference Include="Serilog.Sinks.Debug" Version="2.0.0" />
+		<PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
+		<PackageReference Include="Microsoft.Toolkit.Uwp.Notifications" Version="7.1.3" />
+		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Resource Include="App\Assets\logo-branco.ico" />
+	  <Resource Include="App\Assets\logo-preto.ico" />
+	  <Resource Include="App\Assets\logo-roxo.ico" />
+	</ItemGroup>
+
+	<Target Name="CopyAppSettings" AfterTargets="Build">
+		<Copy SourceFiles="$(MSBuildProjectDirectory)\App\appsettings.json" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="false" />
+	</Target>
+
+</Project>
