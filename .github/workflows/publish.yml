@@ -94,7 +94,7 @@ jobs:
 
       # 5. Restaurar dependências
       - name: Restaurar pacotes NuGet
-        run: dotnet restore D365SupportAssistant.csproj -r win-xg4
+        run: dotnet restore D365SupportAssistant.csproj -r win-x64
 
       # 6. Importar certificado de assinatura (se configurado)
       - name: Importar certificado de assinatura
