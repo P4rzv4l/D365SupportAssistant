@@ -17,12 +17,13 @@ namespace D365Assistant;
 
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
-    private readonly MainViewModel _vm = null!;
-    private readonly DashboardViewModel _dashVm = null!;
-    private readonly AlertsViewModel _alertsVm = null!;
-    private readonly TrackerViewModel _trackerVm = null!;
-    private readonly AIViewModel _aiVm = null!;
-    private readonly IncidentsViewModel _incidentsVm = null!;
+    private readonly MainViewModel _vm;
+    private readonly DashboardViewModel _dashVm;
+    private readonly AlertsViewModel _alertsVm;
+    private readonly TrackerViewModel _trackerVm;
+    private readonly AIViewModel _aiVm;
+    private readonly IncidentsViewModel _incidentsVm;
+    private readonly WebResourcesViewModel _webResourcesVm;
     private readonly IDataverseService _dataverse;
     private string _userName = "Carregando...";
     public string UserName
@@ -45,28 +46,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         TrackerViewModel trackerVm,
         AIViewModel aiVm,
         IncidentsViewModel incidentsVm,
+        WebResourcesViewModel webResourcesVm,
         IDataverseService dataverse)
     {
         InitializeComponent();
 
         DataContext = this;
-        
         _vm = vm;
         _dashVm = dashVm;
         _alertsVm = alertsVm;
         _trackerVm = trackerVm;
         _aiVm = aiVm;
         _incidentsVm = incidentsVm;
+        _webResourcesVm = webResourcesVm;
 
-        // Conecta ViewModel à UI
         _vm.DataRefreshed += OnDataRefreshed;
         _vm.MonitorError += OnMonitorError;
 
-        // ✅ Assina o evento de Device Flow para exibir o código ao usuário
         var auth = App.Services.GetRequiredService<IAuthService>();
         auth.DeviceCodeRequired += OnDeviceCodeRequired;
 
-        // Inicia na Dashboard
         NavigateTo("Dashboard", BtnDashboard);
 
         // Inicia monitoramento após a janela aparecer
@@ -76,7 +75,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             await LoadUserAsync();
         };
 
-        // Timer de atualização da UI (relógio, countdown)
         var uiTimer = new System.Windows.Threading.DispatcherTimer
         {
             Interval = TimeSpan.FromSeconds(1)
@@ -106,9 +104,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 "Tracker" => new TrackerView(_trackerVm),
                 "Alerts" => new AlertsView(_alertsVm),
                 "AI" => new AIView(_aiVm),
+                "Tools" => new ToolsView(_webResourcesVm),
+                "Vault" => new VaultView(
+                    App.Services.GetRequiredService<VaultViewModel>()),
                 "Settings" => new SettingsView(
                     App.Services.GetRequiredService<SettingsViewModel>()),
-                _ => new DashboardView(_dashVm, _trackerVm, this)
+                _ => new DashboardView(_dashVm, _trackerVm, this),
             };
             _pages[pageName] = page;
         }
@@ -125,7 +126,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // ── Atualização da TopBar ─────────────────────────────────────────────────
+    // ── TopBar ────────────────────────────────────────────────────────────────
 
     private void UpdateTopBar()
     {
@@ -144,8 +145,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (_vm.AlertBadgeCount > 0)
         {
             AlertBadge.Visibility = Visibility.Visible;
-            AlertBadgeCount.Text = _vm.AlertBadgeCount > 99
-                ? "99+" : _vm.AlertBadgeCount.ToString();
+            AlertBadgeCount.Text = _vm.AlertBadgeCount > 99 ? "99+" : _vm.AlertBadgeCount.ToString();
         }
         else
         {
@@ -164,7 +164,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // 🔥 INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     protected void OnPropertyChanged([CallerMemberName] string? name = null)
@@ -174,22 +173,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // ── Device Flow ───────────────────────────────────────────────────────────
 
-    // ✅ Exibe o código de autenticação e abre o browser automaticamente
     private void OnDeviceCodeRequired(object? sender, DeviceCodeEventArgs e)
     {
-        // Abre o browser antes de exibir o dialog (não bloqueia)
         try
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
-                e.VerificationUrl)
-            { UseShellExecute = true });
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(e.VerificationUrl)
+                { UseShellExecute = true });
         }
         catch (Exception ex)
         {
             Log.Warning("Não foi possível abrir o browser: {Error}", ex.Message);
         }
 
-        // Exibe o dialog na UI thread
         Dispatcher.Invoke(() =>
         {
             MessageBox.Show(
@@ -210,9 +206,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _dashVm.UpdateData(e.Snapshots, e.Snapshots.Count(s =>
             (DateTime.UtcNow - s.FirstSeenAt.ToUniversalTime()).TotalHours < 24));
-
         _incidentsVm.UpdateData(e.Snapshots);
-
         if (e.Alerts.Count > 0)
             _alertsVm.AddAlerts(e.Alerts);
     }
@@ -225,9 +219,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             MessageBox.Show(
                 $"Erro de autenticação com o Dynamics 365:\n\n{error}\n\n" +
                 "Verifique:\n" +
-                "• Configurações no appsettings.json (TenantId, ClientId, UserId)\n" +
-                "• Delete o arquivo .token_cache.json e tente novamente\n" +
-                "• Vá em Configurações → Excluir cache de token",
+                "• Configurações no appsettings.json\n" +
+                "• Delete o cache de token em Configurações",
                 "Erro de Autenticação",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
@@ -250,7 +243,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _aiVm.AnalyzeCommand.Execute(null);
     }
 
-    // ── Fechar janela ─────────────────────────────────────────────────────────
+    // ── Fechar ────────────────────────────────────────────────────────────────
 
     private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
     {
@@ -274,5 +267,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Log.Warning("Erro ao carregar usuário: {Error}", ex.Message);
             UserName = "Usuário";
         }
+    }
+
+    private void MainFrame_Navigated(object sender, System.Windows.Navigation.NavigationEventArgs e)
+    {
+
     }
 }

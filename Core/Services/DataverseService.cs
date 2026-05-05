@@ -162,7 +162,7 @@ public class DataverseService : IDataverseService
     {
         await RefreshHeadersAsync(ct);
 
-        var url = $"systemusers({userId})?$select=fullname";
+        var url = $"systemusers({userId})?$select=firstname";
 
         var response = await _http.GetAsync(url, ct);
 
@@ -174,7 +174,7 @@ public class DataverseService : IDataverseService
 
         var json = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ct);
 
-        if (json.TryGetProperty("fullname", out var name))
+        if (json.TryGetProperty("firstname", out var name))
             return name.GetString();
 
         return null;

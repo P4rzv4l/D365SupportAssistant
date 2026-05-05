@@ -25,12 +25,12 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#161B22"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#161B22"/>
                                 <Setter Property="Foreground" Value="#E6EDF3"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -41,6 +41,36 @@
         <Style x:Key="SidebarBtnActive" TargetType="Button" BasedOn="{StaticResource SidebarBtn}">
             <Setter Property="Background" Value="#1C2128"/>
             <Setter Property="Foreground" Value="#E6EDF3"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style TargetType="ScrollBar">
+            <Setter Property="Width" Value="3"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid>
+                            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Opacity="0" Command="ScrollBar.PageUpCommand"/>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border Background="#1E3A5F" CornerRadius="2" Margin="0,1,0,1"/>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Opacity="0" Command="ScrollBar.PageDownCommand"/>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </Window.Resources>
 
@@ -55,7 +85,10 @@
             <DockPanel>
                 <Border DockPanel.Dock="Top" Padding="16,20,16,16" BorderBrush="#21262D" BorderThickness="0,0,0,1">
                     <StackPanel>
-                        <TextBlock Text="{Binding UserName}" FontSize="16" FontWeight="Bold" Foreground="#E6EDF3" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock FontSize="16" FontWeight="Bold" Foreground="#E6EDF3" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis">
+                            <Run Text="Olá,"/>
+                            <Run Text="{Binding UserName}"/>
+                        </TextBlock>
                         <TextBlock Text="Monitor de Chamados" FontSize="11" Foreground="#484F58" Margin="0,2,0,0"/>
                     </StackPanel>
                 </Border>
@@ -104,6 +137,18 @@
                             <TextBlock Text="IA (Gemini)" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
+                    <Button Tag="Vault" Style="{StaticResource SidebarBtn}" Click="NavBtn_Click" Margin="0,0,0,2">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#x1F512;" FontSize="12" Margin="0,0,9,0"/>
+                            <TextBlock Text="Cofre" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Tag="Tools" Style="{StaticResource SidebarBtn}" Click="NavBtn_Click" Margin="0,0,0,2">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="🛠️" FontSize="14" Margin="0,0,8,0"/>
+                            <TextBlock Text="Ferramentas" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
                     <Button Tag="Settings" Style="{StaticResource SidebarBtn}" Click="NavBtn_Click" Margin="0,0,0,2">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="⚙️" FontSize="14" Margin="0,0,8,0"/>
@@ -137,7 +182,7 @@
                     </StackPanel>
                 </Grid>
             </Border>
-            <Frame x:Name="MainFrame" NavigationUIVisibility="Hidden" Background="#0D1117"/>
+            <Frame x:Name="MainFrame" NavigationUIVisibility="Hidden" Background="#0D1117" Navigated="MainFrame_Navigated"/>
         </DockPanel>
     </Grid>
 </Window>
