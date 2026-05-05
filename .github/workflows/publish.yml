@@ -161,7 +161,7 @@ jobs:
             $params += "/p:SignManifests=true"
             $params += "/p:CertificateThumbprint=$(
               (Get-ChildItem Cert:\CurrentUser\My | 
-               Where-Object Subject -like '*D365*' | 
+               Where-Object Subject -like '*D365SupportAssistant.pfx*' | 
                Select-Object -First 1).Thumbprint
             )"
           } else {
