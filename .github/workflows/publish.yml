@@ -152,6 +152,10 @@ jobs:
             "/p:RuntimeIdentifier=win-x64"
           )
 
+          $params += "/p:PublishProtocol=ClickOnce"
+          $params += "/p:GenerateManifests=true"
+          $params += "/p:Install=true"
+
           # Adiciona parâmetros de assinatura se houver certificado
           if ($hasCert) {
             $params += "/p:SignManifests=true"
