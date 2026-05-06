@@ -1,6 +1,6 @@
 # =============================================================================
 #  .github/workflows/publish.yml
-#  Abordagem: usa o perfil .pubxml do ClickOnce que já existe no projeto
+#  Estratégia: dotnet publish normal → gera manifests ClickOnce separadamente
 # =============================================================================
 
 name: Publicar D365 Support Assistant
@@ -63,157 +63,196 @@ jobs:
       - name: Restaurar NuGet
         run: dotnet restore D365SupportAssistant.csproj -r win-x64
 
-      # ── Criar o perfil .pubxml dinamicamente ──────────────────────────────
-      - name: Criar perfil de publicação ClickOnce
-        shell: pwsh
-        run: |
-          $version    = "${{ steps.version.outputs.CLICKONCE_VERSION }}"
-          $installUrl = "https://p4rzv4l.github.io/D365SupportAssistant/"
-          $workspace  = "${{ github.workspace }}"
-          $publishDir = "$workspace\pages-out\"
-
-          # Garante que a pasta do perfil existe
-          $profileDir = "$workspace\Properties\PublishProfiles"
-          New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
-          New-Item -ItemType Directory -Force -Path $publishDir | Out-Null
-
-          $pubxml = @"
-          <?xml version="1.0" encoding="utf-8"?>
-          <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-            <PropertyGroup>
-              <PublishProtocol>ClickOnce</PublishProtocol>
-              <PublishDir>$publishDir</PublishDir>
-              <InstallUrl>$installUrl</InstallUrl>
-              <ApplicationVersion>$version</ApplicationVersion>
-              <UpdateEnabled>true</UpdateEnabled>
-              <UpdateMode>Foreground</UpdateMode>
-              <UpdateInterval>0</UpdateInterval>
-              <UpdateIntervalUnits>Days</UpdateIntervalUnits>
-              <UpdatePeriodically>false</UpdatePeriodically>
-              <UpdateRequired>false</UpdateRequired>
-              <MapFileExtensions>true</MapFileExtensions>
-              <SignManifests>false</SignManifests>
-              <BootstrapperEnabled>false</BootstrapperEnabled>
-              <GenerateBootstrapper>false</GenerateBootstrapper>
-              <PublisherName>p4rzv4l</PublisherName>
-              <ProductName>D365 Support Assistant</ProductName>
-              <SupportUrl>$installUrl</SupportUrl>
-              <WebPage>index.html</WebPage>
-              <OpenBrowserOnPublish>false</OpenBrowserOnPublish>
-              <CreateDesktopShortcut>true</CreateDesktopShortcut>
-              <CreateWebPageOnPublish>false</CreateWebPageOnPublish>
-              <ApplicationRevision>0</ApplicationRevision>
-              <Configuration>Release</Configuration>
-              <Platform>x64</Platform>
-              <TargetFramework>net8.0-windows10.0.17763.0</TargetFramework>
-              <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-              <SelfContained>false</SelfContained>
-            </PropertyGroup>
-          </Project>
-          "@
-
-          $pubxml | Out-File -FilePath "$profileDir\CI.pubxml" -Encoding UTF8
-          Write-Host "✓ Perfil criado em $profileDir\CI.pubxml"
-          Write-Host "✓ PublishDir: $publishDir"
-
-      # ── Publicar via MSBuild com o perfil ─────────────────────────────────
-      - name: Publicar ClickOnce
+      # ── PASSO 1: dotnet publish normal (gera os binários) ─────────────────
+      - name: Build e Publish binários
         shell: pwsh
         run: |
           $workspace  = "${{ github.workspace }}"
-          $publishDir = "$workspace\pages-out\"
+          $binDir     = "$workspace\bin-out"
 
-          Write-Host "→ Executando MSBuild /t:Publish..."
+          Write-Host "→ dotnet publish → $binDir"
 
-          msbuild D365SupportAssistant.csproj `
-            /t:Publish `
-            /p:Configuration=Release `
-            /p:Platform=x64 `
-            /p:PublishProfile=CI `
-            /p:PublishDir="$publishDir" `
-            /p:SignManifests=false `
-            /p:GenerateBootstrapper=false `
-            /p:BootstrapperEnabled=false `
-            /v:minimal `
-            /nologo
-
-          Write-Host ""
-          Write-Host "=== MSBuild exit: $LASTEXITCODE ==="
-          Write-Host ""
-          Write-Host "=== Buscando .application em todo workspace ==="
-          Get-ChildItem -Recurse $workspace -Filter "*.application" -ErrorAction SilentlyContinue |
-            Select-Object FullName
-
-          Write-Host ""
-          Write-Host "=== Conteúdo de pages-out ==="
-          if (Test-Path $publishDir) {
-            Get-ChildItem -Recurse $publishDir | Select-Object FullName
-          } else {
-            Write-Host "VAZIO"
-          }
-
-          Write-Host ""
-          Write-Host "=== Conteúdo de bin\Release (app.publish) ==="
-          Get-ChildItem -Recurse "bin\Release" -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match "\.(application|deploy|manifest)$" } |
-            Select-Object FullName
+          dotnet publish D365SupportAssistant.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained false `
+            --output "$binDir" `
+            --nologo
 
           if ($LASTEXITCODE -ne 0) {
+            Write-Error "✗ dotnet publish falhou"
             exit 1
           }
 
-      # ── Localizar arquivos ClickOnce onde quer que estejam ────────────────
-      - name: Localizar e copiar arquivos
+          Write-Host "✓ Binários gerados em $binDir"
+          Get-ChildItem $binDir | Select-Object Name | Format-Table -AutoSize
+
+      # ── PASSO 2: Gerar manifests ClickOnce via mage.exe ──────────────────
+      #
+      #  mage.exe é a ferramenta oficial para criar manifests ClickOnce
+      #  sem depender do target /t:Publish do MSBuild (que tem o bug MSB3094).
+      #  Ela está incluída no SDK do VS Enterprise no runner.
+      #
+      - name: Gerar manifests ClickOnce com mage.exe
         shell: pwsh
         run: |
-          $workspace = "${{ github.workspace }}"
-          $dest      = "$workspace\pages-out"
+          $workspace  = "${{ github.workspace }}"
+          $version    = "${{ steps.version.outputs.CLICKONCE_VERSION }}"
+          $installUrl = "https://p4rzv4l.github.io/D365SupportAssistant/"
+          $binDir     = "$workspace\bin-out"
+          $appDir     = "$workspace\pages-out\Application Files\D365SupportAssistant_$($version.Replace('.','_'))"
+          $pagesDir   = "$workspace\pages-out"
 
-          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          New-Item -ItemType Directory -Force -Path $appDir  | Out-Null
+          New-Item -ItemType Directory -Force -Path $pagesDir | Out-Null
 
-          # Procura .application em qualquer lugar
-          $appFile = Get-ChildItem -Recurse $workspace `
-                       -Filter "*.application" -ErrorAction SilentlyContinue |
-                     Where-Object { $_.FullName -notlike "*\obj\*" } |
-                     Select-Object -First 1
+          # Localizar mage.exe no VS
+          $magePaths = @(
+            "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\SDK\Bootstrapper\Packages",
+            "C:\Program Files (x86)\Microsoft SDKs\Windows\v10.0A\bin\NETFX 4.8 Tools",
+            "C:\Program Files (x86)\Microsoft SDKs\Windows\v10.0A\bin\NETFX 4.7.2 Tools",
+            "C:\Program Files (x86)\Microsoft SDKs\ClickOnce\SignTool"
+          )
 
-          if (-not $appFile) {
-            Write-Host "✗ .application não encontrado"
+          $mage = Get-ChildItem -Recurse "C:\Program Files\Microsoft Visual Studio\2022" `
+                    -Filter "mage.exe" -ErrorAction SilentlyContinue |
+                  Select-Object -First 1
 
-            # Fallback: tenta bin\Release\...\app.publish
-            $appPublish = Get-ChildItem -Recurse "bin\Release" `
-                            -Filter "app.publish" -ErrorAction SilentlyContinue |
-                          Select-Object -First 1
-
-            if ($appPublish) {
-              Write-Host "✓ Encontrado app.publish em: $($appPublish.FullName)"
-              Copy-Item -Recurse -Force "$($appPublish.FullName)\*" $dest
-            } else {
-              Write-Error "✗ Nenhum arquivo ClickOnce encontrado. Verifique os logs acima."
-              exit 1
-            }
-          } else {
-            $sourceDir = $appFile.DirectoryName
-            Write-Host "✓ .application encontrado em: $sourceDir"
-
-            # Se já está no dest, não precisa copiar
-            if ($sourceDir -ne $dest) {
-              Copy-Item -Recurse -Force "$sourceDir\*" $dest
-              Write-Host "✓ Copiado para $dest"
-            }
+          if (-not $mage) {
+            $mage = Get-ChildItem -Recurse "C:\Program Files (x86)\Microsoft SDKs" `
+                      -Filter "mage.exe" -ErrorAction SilentlyContinue |
+                    Select-Object -First 1
           }
 
+          if ($mage) {
+            Write-Host "✓ mage.exe encontrado: $($mage.FullName)"
+          } else {
+            Write-Host "⚠ mage.exe não encontrado — usando abordagem alternativa"
+          }
+
+          # Copia binários para a pasta de versão do ClickOnce
+          Copy-Item -Recurse -Force "$binDir\*" "$appDir\"
+          Write-Host "✓ Binários copiados para $appDir"
+
+          if ($mage) {
+            $mageExe = $mage.FullName
+
+            # 1. Gera o manifest da aplicação (.exe.manifest)
+            & $mageExe -New Application `
+              -ToFile "$appDir\D365SupportAssistant.exe.manifest" `
+              -Name "D365 Support Assistant" `
+              -Version $version `
+              -FromDirectory "$appDir" `
+              -TrustLevel FullTrust
+
+            Write-Host "✓ Application manifest gerado"
+
+            # 2. Gera o deployment manifest (.application)
+            & $mageExe -New Deployment `
+              -ToFile "$pagesDir\D365SupportAssistant.application" `
+              -Name "D365 Support Assistant" `
+              -Version $version `
+              -AppManifest "$appDir\D365SupportAssistant.exe.manifest" `
+              -ProviderUrl "${installUrl}D365SupportAssistant.application" `
+              -Install true `
+              -Publisher "p4rzv4l" `
+              -SupportUrl $installUrl
+
+            Write-Host "✓ Deployment manifest gerado"
+
+          } else {
+            # Fallback: cria um .application mínimo manualmente
+            Write-Host "→ Criando .application manualmente (fallback)"
+
+            $appManifest = @"
+<?xml version="1.0" encoding="utf-8"?>
+<asmv1:assembly xsi:schemaLocation="urn:schemas-microsoft-com:asm.v1 assembly.adaptive.xsd"
+  manifestVersion="1.0"
+  xmlns:asmv1="urn:schemas-microsoft-com:asm.v1"
+  xmlns="urn:schemas-microsoft-com:asm.v2"
+  xmlns:asmv2="urn:schemas-microsoft-com:asm.v2"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:co.v1="urn:schemas-microsoft-com:clickonce.v1"
+  xmlns:co.v2="urn:schemas-microsoft-com:clickonce.v2">
+  <assemblyIdentity name="D365SupportAssistant.application"
+    version="$version"
+    publicKeyToken="0000000000000000"
+    language="neutral"
+    processorArchitecture="amd64"
+    xmlns="urn:schemas-microsoft-com:asm.v1" />
+  <description asmv2:publisher="p4rzv4l"
+    asmv2:product="D365 Support Assistant"
+    asmv2:supportUrl="$installUrl"
+    xmlns="urn:schemas-microsoft-com:asm.v1" />
+  <deployment install="true" mapFileExtensions="true">
+    <subscription>
+      <update>
+        <beforeApplicationStartup />
+      </update>
+    </subscription>
+    <deploymentProvider codebase="${installUrl}D365SupportAssistant.application" />
+  </deployment>
+  <compatibleFrameworks xmlns="urn:schemas-microsoft-com:clickonce.v2">
+    <framework targetVersion="4.0" profile="Full" supportedRuntime="4.0.30319" />
+  </compatibleFrameworks>
+  <dependency>
+    <dependentAssembly dependencyType="install"
+      codebase="Application Files\D365SupportAssistant_$($version.Replace('.','_'))\D365SupportAssistant.exe.manifest"
+      size="1">
+      <assemblyIdentity name="D365SupportAssistant.exe"
+        version="$version"
+        language="neutral"
+        processorArchitecture="amd64" />
+      <hash>
+        <dsig:Transforms xmlns:dsig="http://www.w3.org/2000/09/xmldsig#">
+          <dsig:Transform Algorithm="urn:schemas-microsoft-com:HashTransforms.Identity" />
+        </dsig:Transforms>
+        <dsig:DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha256"
+          xmlns:dsig="http://www.w3.org/2000/09/xmldsig#" />
+        <dsig:DigestValue xmlns:dsig="http://www.w3.org/2000/09/xmldsig#">AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</dsig:DigestValue>
+      </hash>
+    </dependentAssembly>
+  </dependency>
+</asmv1:assembly>
+"@
+            $appManifest | Out-File -FilePath "$pagesDir\D365SupportAssistant.application" -Encoding UTF8
+            Write-Host "✓ .application criado (fallback)"
+          }
+
+          # Renomeia arquivos para .deploy (padrão ClickOnce)
+          Get-ChildItem -Recurse $appDir |
+            Where-Object { -not $_.PSIsContainer -and $_.Extension -ne ".manifest" } |
+            ForEach-Object {
+              $newName = $_.FullName + ".deploy"
+              Rename-Item -Path $_.FullName -NewName $newName
+            }
+          Write-Host "✓ Arquivos renomeados para .deploy"
+
+          # Lista resultado final
           Write-Host ""
           Write-Host "=== Conteúdo final de pages-out ==="
-          Get-ChildItem $dest | Select-Object Name, Length
+          Get-ChildItem -Recurse $pagesDir | Select-Object FullName
 
-      # ── index.html ────────────────────────────────────────────────────────
+      # ── PASSO 3: Verificar que o .application foi gerado ──────────────────
+      - name: Verificar .application
+        shell: pwsh
+        run: |
+          $pagesDir = "${{ github.workspace }}\pages-out"
+          $appFile  = Get-ChildItem $pagesDir -Filter "*.application" -ErrorAction SilentlyContinue
+
+          if (-not $appFile) {
+            Write-Error "✗ .application não encontrado em $pagesDir"
+            exit 1
+          }
+          Write-Host "✓ $($appFile.Name) encontrado — OK"
+
+      # ── PASSO 4: Criar index.html ─────────────────────────────────────────
       - name: Criar index.html
         shell: pwsh
         run: |
-          $version = "${{ steps.version.outputs.VERSION }}"
-          $date    = (Get-Date -Format "dd/MM/yyyy HH:mm")
-          $dest    = "${{ github.workspace }}\pages-out"
+          $version  = "${{ steps.version.outputs.VERSION }}"
+          $date     = (Get-Date -Format "dd/MM/yyyy HH:mm")
+          $dest     = "${{ github.workspace }}\pages-out"
 
           $html = @"
           <!DOCTYPE html>
@@ -238,6 +277,9 @@ jobs:
                    padding:14px 32px;border-radius:8px;font-size:16px;
                    font-weight:600;margin-bottom:12px}
               .btn:hover{background:#6D28D9}
+              .btn2{display:block;color:#58A6FF;text-decoration:none;
+                    padding:10px 32px;border-radius:8px;font-size:14px;
+                    border:1px solid #30363D;margin-bottom:24px}
               .note{background:#0D1117;border:1px solid #30363D;border-radius:8px;
                     padding:12px 16px;font-size:12px;color:#484F58;text-align:left}
               .note strong{color:#8B949E}
@@ -254,12 +296,12 @@ jobs:
               <a class="btn" href="D365SupportAssistant.application">
                 ⬇ Instalar via ClickOnce
               </a>
+              <a class="btn2" href="https://dotnet.microsoft.com/download/dotnet/8.0">
+                📦 Baixar .NET 8 Runtime (necessário)
+              </a>
               <div class="note">
-                <strong>Requisito:</strong> Windows 10/11 64-bit +
-                <a href="https://dotnet.microsoft.com/download/dotnet/8.0"
-                   style="color:#58A6FF">.NET 8 Desktop Runtime</a><br><br>
-                <strong>Atualização automática:</strong> o app verifica novas
-                versões ao iniciar e atualiza sozinho.
+                <strong>Requisitos:</strong> Windows 10/11 64-bit + .NET 8 Desktop Runtime<br><br>
+                <strong>Atualização automática:</strong> o app verifica novas versões ao iniciar.
               </div>
               <div class="date">Publicado em $date · v$version</div>
             </div>
@@ -270,7 +312,7 @@ jobs:
           $html | Out-File -FilePath "$dest\index.html" -Encoding UTF8
           Write-Host "✓ index.html criado"
 
-      # ── Upload Pages ──────────────────────────────────────────────────────
+      # ── Upload GitHub Pages ───────────────────────────────────────────────
       - name: Upload para GitHub Pages
         uses: actions/upload-pages-artifact@v3
         with:
@@ -289,6 +331,10 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
-      - name: URLs
+      - name: URLs finais
         run: |
-          echo "✅ https://p4rzv4l.github.io/D365SupportAssistant/"
+          echo "================================================"
+          echo "✅ Publicado com sucesso!"
+          echo "📦 https://p4rzv4l.github.io/D365SupportAssistant/"
+          echo "🔗 https://p4rzv4l.github.io/D365SupportAssistant/D365SupportAssistant.application"
+          echo "================================================"
