@@ -137,6 +137,16 @@ jobs:
               -Publisher "p4rzv4l" `
               -SupportUrl $installUrl
             Write-Host "✓ Deployment manifest gerado"
+
+            # ── Patch: remove customHostSpecified do .exe.manifest (inválido para WinForms) ──
+            $manifestPath = "$appDir\D365SupportAssistant.exe.manifest"
+            $manifestXml  = [System.IO.File]::ReadAllText($manifestPath)
+            # Remove o atributo customHostSpecified="true" ou "false" onde quer que esteja
+            $manifestXml  = $manifestXml -replace '\s*customHostSpecified\s*=\s*"[^"]*"', ''
+            # Remove o atributo hostInBrowser="true" ou "false" (mesmo problema)
+            $manifestXml  = $manifestXml -replace '\s*hostInBrowser\s*=\s*"[^"]*"', ''
+            [System.IO.File]::WriteAllText($manifestPath, $manifestXml, [System.Text.Encoding]::UTF8)
+            Write-Host "✓ Patch aplicado: customHostSpecified/hostInBrowser removidos do manifest"
           } else {
             # Fallback: cria um .application mínimo manualmente (sem heredoc para evitar erro YAML)
             Write-Host "→ Criando .application manualmente (fallback)"
