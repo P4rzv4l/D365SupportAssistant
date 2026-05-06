@@ -137,6 +137,7 @@ jobs:
           if ($mage) {
             $mageExe = $mage.FullName
 
+
             # 1. Gera o manifest da aplicação (.exe.manifest)
             & $mageExe -New Application `
               -ToFile "$appDir\D365SupportAssistant.exe.manifest" `
