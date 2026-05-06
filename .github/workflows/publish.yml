@@ -51,13 +51,10 @@ jobs:
           } else {
             $ver = "${{ github.ref_name }}".TrimStart("v")
           }
-
-          # Garante formato X.Y.Z.BUILD para o ClickOnce
           $parts = $ver.Split(".")
           while ($parts.Count -lt 4) { $parts += "0" }
           $clickonce = $parts[0..3] -join "."
-
-          echo "VERSION=$ver"               >> $env:GITHUB_OUTPUT
+          echo "VERSION=$ver"                >> $env:GITHUB_OUTPUT
           echo "CLICKONCE_VERSION=$clickonce" >> $env:GITHUB_OUTPUT
           Write-Host "✓ Versão: $ver  →  ClickOnce: $clickonce"
 
@@ -65,31 +62,32 @@ jobs:
       - name: Restaurar pacotes NuGet
         run: dotnet restore D365SupportAssistant.csproj -r win-x64
 
-      # ── Publicar ClickOnce via MSBuild ────────────────────────────────────
-      #
-      #  IMPORTANTE:
-      #   - Usamos MSBuild diretamente (não dotnet publish) porque ClickOnce
-      #     requer o target "Publish" do MSBuild clássico.
-      #   - SignManifests=false: sem certificado por enquanto.
-      #   - GenerateBootstrapper=false: não gera setup.exe (requer componentes
-      #     extras do VS — usaremos só o .application para instalação via URL).
-      #
+      # ── Publicar ClickOnce ─────────────────────────────────────────────────
       - name: Publicar ClickOnce
         shell: pwsh
         run: |
           $version    = "${{ steps.version.outputs.CLICKONCE_VERSION }}"
           $installUrl = "https://p4rzv4l.github.io/D365SupportAssistant/"
-          $publishDir = "${{ github.workspace }}\clickonce-out\"
+          $workspace  = "${{ github.workspace }}"
 
-          Write-Host "→ Versão ClickOnce : $version"
-          Write-Host "→ Install URL      : $installUrl"
-          Write-Host "→ Publish Dir      : $publishDir"
+          # Usa caminho relativo simples — mais confiável com MSBuild
+          $publishDir = "clickonce-out"
 
+          Write-Host "→ Workspace     : $workspace"
+          Write-Host "→ Versão        : $version"
+          Write-Host "→ Install URL   : $installUrl"
+          Write-Host "→ Publish Dir   : $publishDir"
+          Write-Host ""
+
+          # Cria o diretório antes
+          New-Item -ItemType Directory -Force -Path $publishDir | Out-Null
+
+          # Executa MSBuild com verbosidade normal para ver o que acontece
           msbuild D365SupportAssistant.csproj `
             /t:Publish `
             /p:Configuration=Release `
             /p:Platform=x64 `
-            /p:PublishDir="$publishDir" `
+            /p:PublishDir="$publishDir\" `
             /p:InstallUrl="$installUrl" `
             /p:ApplicationVersion="$version" `
             /p:UpdateEnabled=true `
@@ -104,53 +102,87 @@ jobs:
             /p:TargetFramework=net8.0-windows10.0.17763.0 `
             /p:RuntimeIdentifier=win-x64 `
             /p:SelfContained=false `
+            /v:normal `
             /nologo
 
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "✗ MSBuild falhou (código $LASTEXITCODE)"
+          $exitCode = $LASTEXITCODE
+          Write-Host ""
+          Write-Host "=== MSBuild exit code: $exitCode ==="
+
+          if ($exitCode -ne 0) {
+            Write-Error "✗ MSBuild falhou (código $exitCode)"
             exit 1
           }
 
-          Write-Host "✓ MSBuild concluído"
-
-      # ── Verificar saída ────────────────────────────────────────────────────
-      - name: Verificar arquivos ClickOnce
+      # ── DEBUG: Procurar .application em todo o workspace ──────────────────
+      - name: DEBUG - Procurar arquivos ClickOnce
         shell: pwsh
         run: |
-          $publishDir = "${{ github.workspace }}\clickonce-out\"
+          Write-Host "=== Procurando *.application em todo o workspace ==="
+          Get-ChildItem -Recurse "${{ github.workspace }}" -Filter "*.application" -ErrorAction SilentlyContinue |
+            Select-Object FullName
 
-          Write-Host "=== Conteúdo de $publishDir ==="
-          Get-ChildItem -Recurse $publishDir | Select-Object FullName
+          Write-Host ""
+          Write-Host "=== Procurando *.deploy em todo o workspace ==="
+          Get-ChildItem -Recurse "${{ github.workspace }}" -Filter "*.deploy" -ErrorAction SilentlyContinue |
+            Select-Object FullName | Select-Object -First 10
 
-          $appFile = Get-ChildItem $publishDir -Filter "*.application" -Recurse -ErrorAction SilentlyContinue
-          if (-not $appFile) {
-            Write-Error "✗ Arquivo .application não encontrado! Verifique os logs do MSBuild acima."
-            exit 1
+          Write-Host ""
+          Write-Host "=== Conteúdo de clickonce-out\ ==="
+          if (Test-Path "clickonce-out") {
+            Get-ChildItem -Recurse "clickonce-out" | Select-Object FullName
+          } else {
+            Write-Host "  PASTA NÃO EXISTE"
           }
-          Write-Host "✓ Encontrado: $($appFile.FullName)"
 
-      # ── Preparar pasta final para o Pages ─────────────────────────────────
-      - name: Preparar pasta de deploy
+          Write-Host ""
+          Write-Host "=== Conteúdo de bin\Release\ ==="
+          if (Test-Path "bin\Release") {
+            Get-ChildItem -Recurse "bin\Release" -Filter "*.application" -ErrorAction SilentlyContinue |
+              Select-Object FullName
+            Get-ChildItem -Recurse "bin\Release" -Filter "app.publish" -ErrorAction SilentlyContinue |
+              Select-Object FullName
+          } else {
+            Write-Host "  bin\Release não existe"
+          }
+
+      # ── Localizar e copiar arquivos ClickOnce ─────────────────────────────
+      - name: Localizar e preparar arquivos
+        id: locate
         shell: pwsh
         run: |
-          $src  = "${{ github.workspace }}\clickonce-out\"
-          $dest = "${{ github.workspace }}\pages-out\"
-
+          $dest = "${{ github.workspace }}\pages-out"
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
 
-          # Copia tudo que o ClickOnce gerou
-          Copy-Item -Recurse -Force "$src*" $dest
+          # Procura o .application em qualquer lugar do workspace
+          $appFile = Get-ChildItem -Recurse "${{ github.workspace }}" `
+                       -Filter "*.application" -ErrorAction SilentlyContinue |
+                     Select-Object -First 1
 
+          if (-not $appFile) {
+            Write-Error "✗ Arquivo .application não encontrado em nenhum lugar!"
+            exit 1
+          }
+
+          $sourceDir = $appFile.DirectoryName
+          Write-Host "✓ Encontrado em: $sourceDir"
+
+          # Copia tudo da pasta onde está o .application
+          Copy-Item -Recurse -Force "$sourceDir\*" $dest
           Write-Host "✓ Arquivos copiados para $dest"
+
+          # Lista o que foi copiado
+          Write-Host ""
+          Write-Host "=== Arquivos no pages-out ==="
           Get-ChildItem $dest | Select-Object Name
 
-      # ── Criar página de download ───────────────────────────────────────────
+      # ── Criar index.html ──────────────────────────────────────────────────
       - name: Criar index.html
         shell: pwsh
         run: |
           $version = "${{ steps.version.outputs.VERSION }}"
           $date    = (Get-Date -Format "dd/MM/yyyy HH:mm")
-          $dest    = "${{ github.workspace }}\pages-out\"
+          $dest    = "${{ github.workspace }}\pages-out"
 
           $html = @"
           <!DOCTYPE html>
@@ -192,10 +224,10 @@ jobs:
                 ⬇ Instalar via ClickOnce
               </a>
               <div class="note">
-                <strong>Requisito:</strong> Windows 10/11 64-bit + 
-                <a href="https://dotnet.microsoft.com/download/dotnet/8.0" 
+                <strong>Requisito:</strong> Windows 10/11 64-bit +
+                <a href="https://dotnet.microsoft.com/download/dotnet/8.0"
                    style="color:#58A6FF">.NET 8 Desktop Runtime</a><br><br>
-                <strong>Atualização automática:</strong> o app verifica por novas 
+                <strong>Atualização automática:</strong> o app verifica novas
                 versões ao iniciar e atualiza sozinho.
               </div>
               <div class="date">Publicado em $date · v$version</div>
@@ -204,10 +236,10 @@ jobs:
           </html>
           "@
 
-          $html | Out-File -FilePath "${dest}index.html" -Encoding UTF8
+          $html | Out-File -FilePath "$dest\index.html" -Encoding UTF8
           Write-Host "✓ index.html criado"
 
-      # ── Upload para GitHub Pages ───────────────────────────────────────────
+      # ── Upload GitHub Pages ───────────────────────────────────────────────
       - name: Upload para GitHub Pages
         uses: actions/upload-pages-artifact@v3
         with:
@@ -229,8 +261,6 @@ jobs:
       - name: Exibir URLs
         run: |
           echo "================================================"
-          echo "✅ Publicado com sucesso!"
-          echo ""
-          echo "📦 Página: https://p4rzv4l.github.io/D365SupportAssistant/"
-          echo "🔗 Install: https://p4rzv4l.github.io/D365SupportAssistant/D365SupportAssistant.application"
+          echo "✅ Publicado!"
+          echo "📦 https://p4rzv4l.github.io/D365SupportAssistant/"
           echo "================================================"
