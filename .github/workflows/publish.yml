@@ -1,5 +1,6 @@
 # =============================================================================
 #  .github/workflows/publish.yml
+#  Abordagem: usa o perfil .pubxml do ClickOnce que já existe no projeto
 # =============================================================================
 
 name: Publicar D365 Support Assistant
@@ -11,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Versão a publicar (ex: 1.0.0)'
+        description: 'Versão (ex: 1.0.0)'
         required: true
         default: '1.0.0'
 
@@ -41,7 +42,7 @@ jobs:
       - name: Instalar MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      # ── Determinar versão ──────────────────────────────────────────────────
+      # ── Versão ────────────────────────────────────────────────────────────
       - name: Determinar versão
         id: version
         shell: pwsh
@@ -56,127 +57,157 @@ jobs:
           $clickonce = $parts[0..3] -join "."
           echo "VERSION=$ver"                >> $env:GITHUB_OUTPUT
           echo "CLICKONCE_VERSION=$clickonce" >> $env:GITHUB_OUTPUT
-          Write-Host "✓ Versão: $ver  →  ClickOnce: $clickonce"
+          Write-Host "Versão: $ver → ClickOnce: $clickonce"
 
-      # ── Restaurar NuGet ────────────────────────────────────────────────────
-      - name: Restaurar pacotes NuGet
+      # ── NuGet ─────────────────────────────────────────────────────────────
+      - name: Restaurar NuGet
         run: dotnet restore D365SupportAssistant.csproj -r win-x64
 
-      # ── Publicar ClickOnce ─────────────────────────────────────────────────
-      - name: Publicar ClickOnce
+      # ── Criar o perfil .pubxml dinamicamente ──────────────────────────────
+      - name: Criar perfil de publicação ClickOnce
         shell: pwsh
         run: |
           $version    = "${{ steps.version.outputs.CLICKONCE_VERSION }}"
           $installUrl = "https://p4rzv4l.github.io/D365SupportAssistant/"
           $workspace  = "${{ github.workspace }}"
+          $publishDir = "$workspace\pages-out\"
 
-          # Usa caminho relativo simples — mais confiável com MSBuild
-          $publishDir = "clickonce-out"
-
-          Write-Host "→ Workspace     : $workspace"
-          Write-Host "→ Versão        : $version"
-          Write-Host "→ Install URL   : $installUrl"
-          Write-Host "→ Publish Dir   : $publishDir"
-          Write-Host ""
-
-          # Cria o diretório antes
+          # Garante que a pasta do perfil existe
+          $profileDir = "$workspace\Properties\PublishProfiles"
+          New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
           New-Item -ItemType Directory -Force -Path $publishDir | Out-Null
 
-          # Executa MSBuild com verbosidade normal para ver o que acontece
+          $pubxml = @"
+          <?xml version="1.0" encoding="utf-8"?>
+          <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+            <PropertyGroup>
+              <PublishProtocol>ClickOnce</PublishProtocol>
+              <PublishDir>$publishDir</PublishDir>
+              <InstallUrl>$installUrl</InstallUrl>
+              <ApplicationVersion>$version</ApplicationVersion>
+              <UpdateEnabled>true</UpdateEnabled>
+              <UpdateMode>Foreground</UpdateMode>
+              <UpdateInterval>0</UpdateInterval>
+              <UpdateIntervalUnits>Days</UpdateIntervalUnits>
+              <UpdatePeriodically>false</UpdatePeriodically>
+              <UpdateRequired>false</UpdateRequired>
+              <MapFileExtensions>true</MapFileExtensions>
+              <SignManifests>false</SignManifests>
+              <BootstrapperEnabled>false</BootstrapperEnabled>
+              <GenerateBootstrapper>false</GenerateBootstrapper>
+              <PublisherName>p4rzv4l</PublisherName>
+              <ProductName>D365 Support Assistant</ProductName>
+              <SupportUrl>$installUrl</SupportUrl>
+              <WebPage>index.html</WebPage>
+              <OpenBrowserOnPublish>false</OpenBrowserOnPublish>
+              <CreateDesktopShortcut>true</CreateDesktopShortcut>
+              <CreateWebPageOnPublish>false</CreateWebPageOnPublish>
+              <ApplicationRevision>0</ApplicationRevision>
+              <Configuration>Release</Configuration>
+              <Platform>x64</Platform>
+              <TargetFramework>net8.0-windows10.0.17763.0</TargetFramework>
+              <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+              <SelfContained>false</SelfContained>
+            </PropertyGroup>
+          </Project>
+          "@
+
+          $pubxml | Out-File -FilePath "$profileDir\CI.pubxml" -Encoding UTF8
+          Write-Host "✓ Perfil criado em $profileDir\CI.pubxml"
+          Write-Host "✓ PublishDir: $publishDir"
+
+      # ── Publicar via MSBuild com o perfil ─────────────────────────────────
+      - name: Publicar ClickOnce
+        shell: pwsh
+        run: |
+          $workspace  = "${{ github.workspace }}"
+          $publishDir = "$workspace\pages-out\"
+
+          Write-Host "→ Executando MSBuild /t:Publish..."
+
           msbuild D365SupportAssistant.csproj `
             /t:Publish `
             /p:Configuration=Release `
             /p:Platform=x64 `
-            /p:PublishDir="$publishDir\" `
-            /p:InstallUrl="$installUrl" `
-            /p:ApplicationVersion="$version" `
-            /p:UpdateEnabled=true `
-            /p:UpdateMode=Foreground `
-            /p:MapFileExtensions=true `
+            /p:PublishProfile=CI `
+            /p:PublishDir="$publishDir" `
             /p:SignManifests=false `
             /p:GenerateBootstrapper=false `
             /p:BootstrapperEnabled=false `
-            /p:PublisherName="p4rzv4l" `
-            /p:ProductName="D365 Support Assistant" `
-            /p:SupportUrl="$installUrl" `
-            /p:TargetFramework=net8.0-windows10.0.17763.0 `
-            /p:RuntimeIdentifier=win-x64 `
-            /p:SelfContained=false `
-            /v:normal `
+            /v:minimal `
             /nologo
 
-          $exitCode = $LASTEXITCODE
           Write-Host ""
-          Write-Host "=== MSBuild exit code: $exitCode ==="
-
-          if ($exitCode -ne 0) {
-            Write-Error "✗ MSBuild falhou (código $exitCode)"
-            exit 1
-          }
-
-      # ── DEBUG: Procurar .application em todo o workspace ──────────────────
-      - name: DEBUG - Procurar arquivos ClickOnce
-        shell: pwsh
-        run: |
-          Write-Host "=== Procurando *.application em todo o workspace ==="
-          Get-ChildItem -Recurse "${{ github.workspace }}" -Filter "*.application" -ErrorAction SilentlyContinue |
+          Write-Host "=== MSBuild exit: $LASTEXITCODE ==="
+          Write-Host ""
+          Write-Host "=== Buscando .application em todo workspace ==="
+          Get-ChildItem -Recurse $workspace -Filter "*.application" -ErrorAction SilentlyContinue |
             Select-Object FullName
 
           Write-Host ""
-          Write-Host "=== Procurando *.deploy em todo o workspace ==="
-          Get-ChildItem -Recurse "${{ github.workspace }}" -Filter "*.deploy" -ErrorAction SilentlyContinue |
-            Select-Object FullName | Select-Object -First 10
-
-          Write-Host ""
-          Write-Host "=== Conteúdo de clickonce-out\ ==="
-          if (Test-Path "clickonce-out") {
-            Get-ChildItem -Recurse "clickonce-out" | Select-Object FullName
+          Write-Host "=== Conteúdo de pages-out ==="
+          if (Test-Path $publishDir) {
+            Get-ChildItem -Recurse $publishDir | Select-Object FullName
           } else {
-            Write-Host "  PASTA NÃO EXISTE"
+            Write-Host "VAZIO"
           }
 
           Write-Host ""
-          Write-Host "=== Conteúdo de bin\Release\ ==="
-          if (Test-Path "bin\Release") {
-            Get-ChildItem -Recurse "bin\Release" -Filter "*.application" -ErrorAction SilentlyContinue |
-              Select-Object FullName
-            Get-ChildItem -Recurse "bin\Release" -Filter "app.publish" -ErrorAction SilentlyContinue |
-              Select-Object FullName
-          } else {
-            Write-Host "  bin\Release não existe"
-          }
+          Write-Host "=== Conteúdo de bin\Release (app.publish) ==="
+          Get-ChildItem -Recurse "bin\Release" -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match "\.(application|deploy|manifest)$" } |
+            Select-Object FullName
 
-      # ── Localizar e copiar arquivos ClickOnce ─────────────────────────────
-      - name: Localizar e preparar arquivos
-        id: locate
-        shell: pwsh
-        run: |
-          $dest = "${{ github.workspace }}\pages-out"
-          New-Item -ItemType Directory -Force -Path $dest | Out-Null
-
-          # Procura o .application em qualquer lugar do workspace
-          $appFile = Get-ChildItem -Recurse "${{ github.workspace }}" `
-                       -Filter "*.application" -ErrorAction SilentlyContinue |
-                     Select-Object -First 1
-
-          if (-not $appFile) {
-            Write-Error "✗ Arquivo .application não encontrado em nenhum lugar!"
+          if ($LASTEXITCODE -ne 0) {
             exit 1
           }
 
-          $sourceDir = $appFile.DirectoryName
-          Write-Host "✓ Encontrado em: $sourceDir"
+      # ── Localizar arquivos ClickOnce onde quer que estejam ────────────────
+      - name: Localizar e copiar arquivos
+        shell: pwsh
+        run: |
+          $workspace = "${{ github.workspace }}"
+          $dest      = "$workspace\pages-out"
 
-          # Copia tudo da pasta onde está o .application
-          Copy-Item -Recurse -Force "$sourceDir\*" $dest
-          Write-Host "✓ Arquivos copiados para $dest"
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
 
-          # Lista o que foi copiado
+          # Procura .application em qualquer lugar
+          $appFile = Get-ChildItem -Recurse $workspace `
+                       -Filter "*.application" -ErrorAction SilentlyContinue |
+                     Where-Object { $_.FullName -notlike "*\obj\*" } |
+                     Select-Object -First 1
+
+          if (-not $appFile) {
+            Write-Host "✗ .application não encontrado"
+
+            # Fallback: tenta bin\Release\...\app.publish
+            $appPublish = Get-ChildItem -Recurse "bin\Release" `
+                            -Filter "app.publish" -ErrorAction SilentlyContinue |
+                          Select-Object -First 1
+
+            if ($appPublish) {
+              Write-Host "✓ Encontrado app.publish em: $($appPublish.FullName)"
+              Copy-Item -Recurse -Force "$($appPublish.FullName)\*" $dest
+            } else {
+              Write-Error "✗ Nenhum arquivo ClickOnce encontrado. Verifique os logs acima."
+              exit 1
+            }
+          } else {
+            $sourceDir = $appFile.DirectoryName
+            Write-Host "✓ .application encontrado em: $sourceDir"
+
+            # Se já está no dest, não precisa copiar
+            if ($sourceDir -ne $dest) {
+              Copy-Item -Recurse -Force "$sourceDir\*" $dest
+              Write-Host "✓ Copiado para $dest"
+            }
+          }
+
           Write-Host ""
-          Write-Host "=== Arquivos no pages-out ==="
-          Get-ChildItem $dest | Select-Object Name
+          Write-Host "=== Conteúdo final de pages-out ==="
+          Get-ChildItem $dest | Select-Object Name, Length
 
-      # ── Criar index.html ──────────────────────────────────────────────────
+      # ── index.html ────────────────────────────────────────────────────────
       - name: Criar index.html
         shell: pwsh
         run: |
@@ -239,7 +270,7 @@ jobs:
           $html | Out-File -FilePath "$dest\index.html" -Encoding UTF8
           Write-Host "✓ index.html criado"
 
-      # ── Upload GitHub Pages ───────────────────────────────────────────────
+      # ── Upload Pages ──────────────────────────────────────────────────────
       - name: Upload para GitHub Pages
         uses: actions/upload-pages-artifact@v3
         with:
@@ -258,9 +289,6 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
-      - name: Exibir URLs
+      - name: URLs
         run: |
-          echo "================================================"
-          echo "✅ Publicado!"
-          echo "📦 https://p4rzv4l.github.io/D365SupportAssistant/"
-          echo "================================================"
+          echo "✅ https://p4rzv4l.github.io/D365SupportAssistant/"
