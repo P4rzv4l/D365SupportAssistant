@@ -116,17 +116,61 @@ jobs:
           Copy-Item -Recurse -Force "$binDir\*" "$appDir\"
           Write-Host "✓ Binários copiados para $appDir"
 
+          # ── Coleta hashes SHA256 de todos os arquivos para o manifest ──────
+          $fileEntries = ''
+          Get-ChildItem -Recurse $appDir -File | ForEach-Object {
+            $relPath = $_.FullName.Substring($appDir.Length + 1).Replace('\','/')
+            $sha256  = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
+            $b64hash = [Convert]::ToBase64String(([byte[]] -split ($sha256 -replace '..', '0x$& ')))
+            $size    = $_.Length
+            $deployName = if ($_.Extension -eq '.manifest') { $relPath } else { "$relPath.deploy" }
+            $fileEntries += "  <file name=`"$deployName`" size=`"$size`">`r`n"
+            $fileEntries += "    <hash xmlns:dsig=`"http://www.w3.org/2000/09/xmldsig#`">`r`n"
+            $fileEntries += "      <dsig:Transforms><dsig:Transform Algorithm=`"urn:schemas-microsoft-com:HashTransforms.Identity`"/></dsig:Transforms>`r`n"
+            $fileEntries += "      <dsig:DigestMethod Algorithm=`"http://www.w3.org/2000/09/xmldsig#sha256`"/>`r`n"
+            $fileEntries += "      <dsig:DigestValue>$b64hash</dsig:DigestValue>`r`n"
+            $fileEntries += "    </hash>`r`n"
+            $fileEntries += "  </file>`r`n"
+          }
+
+          # ── Gera .exe.manifest manualmente (sem customHostSpecified) ────────
+          $appManifestPath = "$appDir\D365SupportAssistant.exe.manifest"
+          $appManifestXml  = '<?xml version="1.0" encoding="utf-8"?>' + "`r`n"
+          $appManifestXml += '<asmv1:assembly manifestVersion="1.0"' + "`r`n"
+          $appManifestXml += '  xmlns:asmv1="urn:schemas-microsoft-com:asm.v1"' + "`r`n"
+          $appManifestXml += '  xmlns="urn:schemas-microsoft-com:asm.v2"' + "`r`n"
+          $appManifestXml += '  xmlns:asmv2="urn:schemas-microsoft-com:asm.v2"' + "`r`n"
+          $appManifestXml += '  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' + "`r`n"
+          $appManifestXml += '  xmlns:co.v1="urn:schemas-microsoft-com:clickonce.v1"' + "`r`n"
+          $appManifestXml += '  xmlns:co.v2="urn:schemas-microsoft-com:clickonce.v2">' + "`r`n"
+          $appManifestXml += "  <assemblyIdentity name=`"D365SupportAssistant.exe`" version=`"$version`" language=`"neutral`" processorArchitecture=`"amd64`" xmlns=`"urn:schemas-microsoft-com:asm.v1`"/>`r`n"
+          $appManifestXml += "  <description asmv2:iconFile=`"`" xmlns=`"urn:schemas-microsoft-com:asm.v1`"/>`r`n"
+          $appManifestXml += '  <application/>' + "`r`n"
+          $appManifestXml += '  <entryPoint>' + "`r`n"
+          $appManifestXml += "    <assemblyIdentity name=`"D365SupportAssistant`" version=`"$version`" language=`"neutral`" processorArchitecture=`"amd64`"/>`r`n"
+          $appManifestXml += "    <commandLine file=`"D365SupportAssistant.exe`" parameters=`"`"/>`r`n"
+          $appManifestXml += '  </entryPoint>' + "`r`n"
+          $appManifestXml += '  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">' + "`r`n"
+          $appManifestXml += '    <security><applicationRequestMinimum>' + "`r`n"
+          $appManifestXml += '      <PermissionSet Unrestricted="true" ID="Custom" SameSite="site"/>' + "`r`n"
+          $appManifestXml += '    </applicationRequestMinimum></security>' + "`r`n"
+          $appManifestXml += '  </trustInfo>' + "`r`n"
+          $appManifestXml += '  <dependency>' + "`r`n"
+          $appManifestXml += '    <dependentOS><osVersionInfo><os majorVersion="6" minorVersion="0" buildNumber="0" servicePackMajor="0"/></osVersionInfo></dependentOS>' + "`r`n"
+          $appManifestXml += '  </dependency>' + "`r`n"
+          $appManifestXml += '  <dependency>' + "`r`n"
+          $appManifestXml += '    <dependentAssembly dependencyType="preRequisite" allowDelayedBinding="true">' + "`r`n"
+          $appManifestXml += '      <assemblyIdentity name="Microsoft.Windows.CommonLanguageRuntime" version="4.0.0.0"/>' + "`r`n"
+          $appManifestXml += '    </dependentAssembly>' + "`r`n"
+          $appManifestXml += '  </dependency>' + "`r`n"
+          $appManifestXml += $fileEntries
+          $appManifestXml += '</asmv1:assembly>'
+          [System.IO.File]::WriteAllText($appManifestPath, $appManifestXml, [System.Text.Encoding]::UTF8)
+          Write-Host "✓ .exe.manifest gerado manualmente (sem customHostSpecified)"
+
           if ($mage) {
             $mageExe = $mage.FullName
-            # 1. Gera o manifest da aplicação (.exe.manifest)
-            & $mageExe -New Application `
-              -ToFile "$appDir\D365SupportAssistant.exe.manifest" `
-              -Name "D365 Support Assistant" `
-              -Version $version `
-              -FromDirectory "$appDir" `
-              -TrustLevel FullTrust
-            Write-Host "✓ Application manifest gerado"
-            # 2. Gera o deployment manifest (.application)
+            # Usa mage APENAS para gerar o .application (deployment manifest)
             & $mageExe -New Deployment `
               -ToFile "$pagesDir\D365SupportAssistant.application" `
               -Name "D365 Support Assistant" `
@@ -137,27 +181,6 @@ jobs:
               -Publisher "p4rzv4l" `
               -SupportUrl $installUrl
             Write-Host "✓ Deployment manifest gerado"
-
-            # ── Patch: remove customHostSpecified/hostInBrowser dos dois manifests ──
-            # O atributo é inválido para WPF .NET 8 com o dfshim.dll legado do Windows
-            $filesToPatch = @(
-              "$appDir\D365SupportAssistant.exe.manifest",
-              "$pagesDir\D365SupportAssistant.application"
-            )
-            foreach ($f in $filesToPatch) {
-              if (Test-Path $f) {
-                $content = [System.IO.File]::ReadAllText($f)
-                $before  = $content
-                $content = $content -replace '\s*customHostSpecified\s*=\s*"[^"]*"', ''
-                $content = $content -replace '\s*hostInBrowser\s*=\s*"[^"]*"', ''
-                if ($content -ne $before) {
-                  [System.IO.File]::WriteAllText($f, $content, [System.Text.Encoding]::UTF8)
-                  Write-Host "✓ Patch aplicado em: $(Split-Path $f -Leaf)"
-                } else {
-                  Write-Host "ℹ Atributo não encontrado em: $(Split-Path $f -Leaf)"
-                }
-              }
-            }
           } else {
             # Fallback: cria um .application mínimo manualmente (sem heredoc para evitar erro YAML)
             Write-Host "→ Criando .application manualmente (fallback)"
