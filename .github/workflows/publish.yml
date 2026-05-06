@@ -234,6 +234,12 @@ jobs:
             -CertFile "$certPath" -Password "$certPwd"
           Write-Host "✓ Deployment manifest assinado"
 
+          # ── Diagnóstico: dumpa o .application gerado ──────────────────────
+          Write-Host "=== CONTEÚDO DO .application ==="
+          [System.IO.File]::ReadAllText("$pagesDir\D365SupportAssistant.application") -split "`n" |
+            ForEach-Object { Write-Host $_ }
+          Write-Host "=== FIM .application ==="
+
           # Lista resultado final
           Write-Host ""
           Write-Host "=== Conteúdo final de pages-out ==="
