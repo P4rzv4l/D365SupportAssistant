@@ -151,15 +151,17 @@ jobs:
 
           $appManPath = "$appDir\D365SupportAssistant.exe.manifest"
 
-          # ── Lê o manifest gerado pelo mage para diagnóstico ────────────────
-          $xml = [System.IO.File]::ReadAllText($appManPath)
-          Write-Host "=== manifest completo (primeiros 80 chars por linha) ==="
-          $xml -split "`n" | ForEach-Object { Write-Host $_.Substring(0, [Math]::Min($_.Length,120)) }
-          Write-Host "=== fim manifest ==="
-
-          # ── Descobre o nome real do assembly lendo o PE ────────────────────
+          # ── Descobre o nome real do assembly lendo a DLL gerenciada ──────────
           $asmName = [System.Reflection.AssemblyName]::GetAssemblyName("$appDir\D365SupportAssistant.dll").Name
           Write-Host "✓ Nome real do assembly: $asmName"
+
+          # ── Extrai publicKeyToken do certificado PFX ───────────────────────
+          $pfxCert     = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certPath, $certPwd)
+          $pubKeyBytes = $pfxCert.PublicKey.EncodedKeyValue.RawData
+          $sha1Hash    = [System.Security.Cryptography.SHA1]::Create().ComputeHash($pubKeyBytes)
+          # publicKeyToken = últimos 8 bytes do SHA1 da chave pública, ordem invertida
+          $pkt = (($sha1Hash[($sha1Hash.Length-8)..($sha1Hash.Length-1)] | ForEach-Object { $_.ToString('x2') }) -join '')
+          Write-Host "✓ publicKeyToken: $pkt"
 
           # ── Reconstrói o manifest do zero com dados corretos ───────────────
           # Coleta todos os arquivos e seus hashes para a seção <file>
@@ -188,7 +190,7 @@ jobs:
           $newManifest += '  xmlns="urn:schemas-microsoft-com:asm.v2"' + "`r`n"
           $newManifest += '  xmlns:asmv2="urn:schemas-microsoft-com:asm.v2"' + "`r`n"
           $newManifest += '  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' + "`r`n"
-          $newManifest += "  <assemblyIdentity name=`"$asmName`" version=`"$version`" language=`"neutral`" processorArchitecture=`"amd64`" type=`"win32`" xmlns=`"urn:schemas-microsoft-com:asm.v1`"/>`r`n"
+          $newManifest += "  <assemblyIdentity name=`"$asmName`" version=`"$version`" publicKeyToken=`"$pkt`" language=`"neutral`" processorArchitecture=`"amd64`" type=`"win32`" xmlns=`"urn:schemas-microsoft-com:asm.v1`"/>`r`n"
           $newManifest += '  <application/>' + "`r`n"
           $newManifest += '  <entryPoint>' + "`r`n"
           $newManifest += "    <assemblyIdentity name=`"$asmName`" version=`"$version`" language=`"neutral`" processorArchitecture=`"amd64`"/>`r`n"
