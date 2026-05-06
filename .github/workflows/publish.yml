@@ -213,8 +213,8 @@ jobs:
                     </hash>
                   </dependentAssembly>
                 </dependency>
-              </asmv1:assembly>
-            "@
+              </asmv1:assembly>"@
+
             $appManifest | Out-File -FilePath "$pagesDir\D365SupportAssistant.application" -Encoding UTF8
             Write-Host "✓ .application criado (fallback)"
           }
@@ -306,8 +306,7 @@ jobs:
               <div class="date">Publicado em $date · v$version</div>
             </div>
           </body>
-          </html>
-          "@
+          </html>"@
 
           $html | Out-File -FilePath "$dest\index.html" -Encoding UTF8
           Write-Host "✓ index.html criado"
