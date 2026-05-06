@@ -149,72 +149,73 @@ jobs:
             -TrustLevel FullTrust
           Write-Host "✓ Application manifest gerado"
 
-          # 2. Remove atributos problemáticos para WPF .NET 8 (pré-assinatura)
           $appManPath = "$appDir\D365SupportAssistant.exe.manifest"
-          $xml = [System.IO.File]::ReadAllText($appManPath)
-          $xml = $xml -replace '\s*customHostSpecified\s*=\s*"[^"]*"', ''
-          $xml = $xml -replace '\s*hostInBrowser\s*=\s*"[^"]*"', ''
-          [System.IO.File]::WriteAllText($appManPath, $xml, [System.Text.Encoding]::UTF8)
-          Write-Host "✓ Patch pré-assinatura aplicado"
 
-          # 3. Assina o application manifest com o certificado auto-assinado
+          # ── Lê o manifest gerado pelo mage para diagnóstico ────────────────
+          $xml = [System.IO.File]::ReadAllText($appManPath)
+          Write-Host "=== manifest completo (primeiros 80 chars por linha) ==="
+          $xml -split "`n" | ForEach-Object { Write-Host $_.Substring(0, [Math]::Min($_.Length,120)) }
+          Write-Host "=== fim manifest ==="
+
+          # ── Descobre o nome real do assembly lendo o PE ────────────────────
+          $asmName = [System.Reflection.AssemblyName]::GetAssemblyName("$appDir\D365SupportAssistant.exe").Name
+          Write-Host "✓ Nome real do assembly: $asmName"
+
+          # ── Reconstrói o manifest do zero com dados corretos ───────────────
+          # Coleta todos os arquivos e seus hashes para a seção <file>
+          $fileSection = ''
+          Get-ChildItem -Recurse $appDir -File |
+            Where-Object { $_.Extension -ne '.manifest' } |
+            ForEach-Object {
+              $rel  = $_.FullName.Substring($appDir.Length + 1).Replace('\','/')
+              $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
+              $b64  = [Convert]::ToBase64String(
+                        [byte[]]($hash -split '(?<=\G..)' | Where-Object {$_} | ForEach-Object {[Convert]::ToByte($_, 16)})
+                      )
+              $sz   = $_.Length
+              $fileSection += "  <file name=`"$rel.deploy`" size=`"$sz`">`r`n"
+              $fileSection += "    <hash>`r`n"
+              $fileSection += "      <dsig:Transforms xmlns:dsig=`"http://www.w3.org/2000/09/xmldsig#`"><dsig:Transform Algorithm=`"urn:schemas-microsoft-com:HashTransforms.Identity`"/></dsig:Transforms>`r`n"
+              $fileSection += "      <dsig:DigestMethod xmlns:dsig=`"http://www.w3.org/2000/09/xmldsig#`" Algorithm=`"http://www.w3.org/2000/09/xmldsig#sha256`"/>`r`n"
+              $fileSection += "      <dsig:DigestValue xmlns:dsig=`"http://www.w3.org/2000/09/xmldsig#`">$b64</dsig:DigestValue>`r`n"
+              $fileSection += "    </hash>`r`n"
+              $fileSection += "  </file>`r`n"
+            }
+
+          $newManifest  = '<?xml version="1.0" encoding="utf-8"?>' + "`r`n"
+          $newManifest += '<asmv1:assembly manifestVersion="1.0"' + "`r`n"
+          $newManifest += '  xmlns:asmv1="urn:schemas-microsoft-com:asm.v1"' + "`r`n"
+          $newManifest += '  xmlns="urn:schemas-microsoft-com:asm.v2"' + "`r`n"
+          $newManifest += '  xmlns:asmv2="urn:schemas-microsoft-com:asm.v2"' + "`r`n"
+          $newManifest += '  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' + "`r`n"
+          $newManifest += "  <assemblyIdentity name=`"$asmName`" version=`"$version`" language=`"neutral`" processorArchitecture=`"amd64`" type=`"win32`" xmlns=`"urn:schemas-microsoft-com:asm.v1`"/>`r`n"
+          $newManifest += '  <application/>' + "`r`n"
+          $newManifest += '  <entryPoint>' + "`r`n"
+          $newManifest += "    <assemblyIdentity name=`"$asmName`" version=`"$version`" language=`"neutral`" processorArchitecture=`"amd64`"/>`r`n"
+          $newManifest += "    <commandLine file=`"D365SupportAssistant.exe`" parameters=`"`"/>`r`n"
+          $newManifest += '  </entryPoint>' + "`r`n"
+          $newManifest += '  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">' + "`r`n"
+          $newManifest += '    <security><applicationRequestMinimum>' + "`r`n"
+          $newManifest += '      <PermissionSet Unrestricted="true" ID="Custom" SameSite="site"/>' + "`r`n"
+          $newManifest += '      <defaultAssemblyRequest permissionSetReference="Custom"/>' + "`r`n"
+          $newManifest += '    </applicationRequestMinimum></security>' + "`r`n"
+          $newManifest += '  </trustInfo>' + "`r`n"
+          $newManifest += $fileSection
+          $newManifest += '</asmv1:assembly>'
+          [System.IO.File]::WriteAllText($appManPath, $newManifest, [System.Text.Encoding]::UTF8)
+          Write-Host "✓ Application manifest reconstruído do zero"
+
+          # ── Assina o manifest reconstruído ─────────────────────────────────
           & $mageExe -Sign "$appManPath" -CertFile "$certPath" -Password "$certPwd"
           Write-Host "✓ Application manifest assinado"
 
-          # 4. Remove customHostSpecified APÓS a assinatura
-          #    Loga o contexto para diagnóstico e remove via regex agressivo
-          $rawXml = [System.IO.File]::ReadAllText($appManPath)
-
-          # Diagnóstico: mostra as linhas com o atributo
-          Write-Host "=== Linhas com customHostSpecified/hostInBrowser ==="
-          $rawXml -split "`n" | Where-Object { $_ -match 'customHostSpecified|hostInBrowser' } |
-            ForEach-Object { Write-Host $_ }
-          Write-Host "=== Fim diagnóstico ==="
-
-          # Remove qualquer variação do atributo (com ou sem namespace prefix)
-          $patched = $rawXml
-          $patched = $patched -replace '[a-zA-Z0-9:]*customHostSpecified\s*=\s*"[^"]*"', ''
-          $patched = $patched -replace '[a-zA-Z0-9:]*hostInBrowser\s*=\s*"[^"]*"', ''
-          [System.IO.File]::WriteAllText($appManPath, $patched, [System.Text.Encoding]::UTF8)
-          # 5. Corrige o entryPoint — mage usa o nome interno do assembly (MyApplication.app)
-          #    mas o dfshim precisa encontrar o arquivo pelo nome correto
-          $rawXml2 = [System.IO.File]::ReadAllText($appManPath)
-
-          # Log do entryPoint atual para diagnóstico
-          Write-Host "=== entryPoint atual ==="
-          $rawXml2 -split "`n" | Where-Object { $_ -match 'entryPoint|commandLine|assemblyIdentity' } |
-            Select-Object -First 10 | ForEach-Object { Write-Host $_ }
-          Write-Host "=== fim ==="
-
-          # Substitui o bloco entryPoint inteiro por um correto apontando para o .exe
-          $entryPointNew  = "  <entryPoint xmlns=`"urn:schemas-microsoft-com:asm.v2`">`r`n"
-          $entryPointNew += "    <assemblyIdentity name=`"D365SupportAssistant`" version=`"$version`" language=`"neutral`" processorArchitecture=`"amd64`" />`r`n"
-          $entryPointNew += "    <commandLine file=`"D365SupportAssistant.exe`" parameters=`"`" />`r`n"
-          $entryPointNew += "  </entryPoint>"
-          # Remove o entryPoint existente e insere o correto antes do fechamento do assembly
-          $rawXml2 = $rawXml2 -replace '(?s)<entryPoint[^>]*>.*?</entryPoint>', $entryPointNew
-          [System.IO.File]::WriteAllText($appManPath, $rawXml2, [System.Text.Encoding]::UTF8)
-          Write-Host "✓ entryPoint corrigido para D365SupportAssistant.exe"
-
-          # Verifica se o atributo foi realmente removido
-          $verify = [System.IO.File]::ReadAllText($appManPath)
-          if ($verify -match 'customHostSpecified') {
-            Write-Error "✗ customHostSpecified ainda presente no manifest após patch!"
-            exit 1
-          }
-          if ($verify -notmatch 'D365SupportAssistant\.exe') {
-            Write-Error "✗ entryPoint não aponta para D365SupportAssistant.exe!"
-            exit 1
-          }
-          Write-Host "✓ Manifest final OK: sem customHostSpecified, entryPoint correto"
-
-          # 4. Renomeia arquivos para .deploy ANTES de gerar o deployment manifest
+          # ── Renomeia arquivos para .deploy ─────────────────────────────────
           Get-ChildItem -Recurse $appDir |
             Where-Object { -not $_.PSIsContainer -and $_.Extension -ne ".manifest" } |
             ForEach-Object { Rename-Item -Path $_.FullName -NewName ($_.FullName + ".deploy") }
           Write-Host "✓ Arquivos renomeados para .deploy"
 
-          # 5. Gera o deployment manifest (.application) referenciando o manifest assinado
+          # ── Gera deployment manifest ───────────────────────────────────────
           & $mageExe -New Deployment `
             -ToFile "$pagesDir\D365SupportAssistant.application" `
             -Name "D365 Support Assistant" `
@@ -226,7 +227,7 @@ jobs:
             -SupportUrl $installUrl
           Write-Host "✓ Deployment manifest gerado"
 
-          # 6. Assina o deployment manifest
+          # ── Assina o deployment manifest ───────────────────────────────────
           & $mageExe -Sign "$pagesDir\D365SupportAssistant.application" `
             -CertFile "$certPath" -Password "$certPwd"
           Write-Host "✓ Deployment manifest assinado"
