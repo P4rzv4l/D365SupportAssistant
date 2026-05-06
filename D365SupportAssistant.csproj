@@ -1,5 +1,4 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
 	<PropertyGroup>
 		<TargetFramework>net8.0-windows10.0.17763.0</TargetFramework>
 		<OutputType>WinExe</OutputType>
@@ -12,9 +11,9 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-	  <None Remove="App\Assets\logo-branco.ico" />
-	  <None Remove="App\Assets\logo-preto.ico" />
-	  <None Remove="App\Assets\logo-roxo.ico" />
+		<None Remove="App\Assets\logo-branco.ico" />
+		<None Remove="App\Assets\logo-preto.ico" />
+		<None Remove="App\Assets\logo-roxo.ico" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -29,7 +28,6 @@
 		<Folder Include="App\Styles\" />
 	</ItemGroup>
 
-	<!-- ✅ None em vez de Content — copia garantida em projetos WPF -->
 	<ItemGroup>
 		<None Include="App\appsettings.json">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -52,15 +50,9 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <Resource Include="App\Assets\logo-branco.ico" />
-	  <Resource Include="App\Assets\logo-preto.ico" />
-	  <Resource Include="App\Assets\logo-roxo.ico" />
+		<Resource Include="App\Assets\logo-branco.ico" />
+		<Resource Include="App\Assets\logo-preto.ico" />
+		<Resource Include="App\Assets\logo-roxo.ico" />
 	</ItemGroup>
-
-	<Target Name="CopyAppSettings" AfterTargets="Build"
-        Condition="'$(PublishingProject)'!='true' AND '$(Publish)'!='true'">
-		<Copy SourceFiles="$(MSBuildProjectDirectory)\App\appsettings.json"
-			  DestinationFolder="$(OutputPath)" SkipUnchangedFiles="false" />
-	</Target>
 
 </Project>
