@@ -83,8 +83,34 @@ jobs:
           Write-Host "✓ Binários gerados em $binDir"
           Get-ChildItem $binDir | Select-Object Name | Format-Table -AutoSize
 
-      # ── PASSO 2: Gerar manifests ClickOnce via mage.exe ──────────────────
-      - name: Gerar manifests ClickOnce com mage.exe
+      # ── PASSO 2: Gerar certificado auto-assinado ──────────────────────────
+      - name: Gerar certificado auto-assinado para ClickOnce
+        id: cert
+        shell: pwsh
+        run: |
+          $certPath = "${{ github.workspace }}\clickonce.pfx"
+          $pwd      = ConvertTo-SecureString "ClickOnce123!" -AsPlainText -Force
+
+          # Gera certificado auto-assinado válido por 10 anos
+          $cert = New-SelfSignedCertificate `
+            -Subject "CN=D365SupportAssistant" `
+            -CertStoreLocation "Cert:\CurrentUser\My" `
+            -KeyExportPolicy Exportable `
+            -KeySpec Signature `
+            -KeyAlgorithm RSA `
+            -KeyLength 2048 `
+            -HashAlgorithm SHA256 `
+            -NotAfter (Get-Date).AddYears(10) `
+            -Type CodeSigningCert
+
+          Export-PfxCertificate -Cert $cert -FilePath $certPath -Password $pwd | Out-Null
+          Write-Host "✓ Certificado gerado: $certPath"
+          Write-Host "  Thumbprint: $($cert.Thumbprint)"
+          echo "CERT_PATH=$certPath"       >> $env:GITHUB_OUTPUT
+          echo "CERT_THUMB=$($cert.Thumbprint)" >> $env:GITHUB_OUTPUT
+
+      # ── PASSO 3: Gerar manifests ClickOnce e assinar ──────────────────────
+      - name: Gerar e assinar manifests ClickOnce
         shell: pwsh
         run: |
           $workspace  = "${{ github.workspace }}"
@@ -93,119 +119,81 @@ jobs:
           $binDir     = "$workspace\bin-out"
           $appDir     = "$workspace\pages-out\Application Files\D365SupportAssistant_$($version.Replace('.','_'))"
           $pagesDir   = "$workspace\pages-out"
+          $certPath   = "${{ steps.cert.outputs.CERT_PATH }}"
+          $certPwd    = "ClickOnce123!"
 
           New-Item -ItemType Directory -Force -Path $appDir  | Out-Null
           New-Item -ItemType Directory -Force -Path $pagesDir | Out-Null
+
+          # Localizar mage.exe
+          $mage = Get-ChildItem -Recurse "C:\Program Files\Microsoft Visual Studio\2022" `
+                    -Filter "mage.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $mage) {
+            $mage = Get-ChildItem -Recurse "C:\Program Files (x86)\Microsoft SDKs" `
+                      -Filter "mage.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if (-not $mage) { Write-Error "✗ mage.exe não encontrado"; exit 1 }
+          $mageExe = $mage.FullName
+          Write-Host "✓ mage.exe: $mageExe"
 
           # Copia binários para a pasta de versão do ClickOnce
           Copy-Item -Recurse -Force "$binDir\*" "$appDir\"
           Write-Host "✓ Binários copiados para $appDir"
 
-          # ── Coleta hashes SHA256 de todos os arquivos para o manifest ──────
-          $fileEntries = ''
-          Get-ChildItem -Recurse $appDir -File | ForEach-Object {
-            $relPath = $_.FullName.Substring($appDir.Length + 1).Replace('\','/')
-            $sha256  = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
-            $b64hash = [Convert]::ToBase64String(([byte[]] -split ($sha256 -replace '..', '0x$& ')))
-            $size    = $_.Length
-            $deployName = if ($_.Extension -eq '.manifest') { $relPath } else { "$relPath.deploy" }
-            $fileEntries += "  <file name=`"$deployName`" size=`"$size`">`r`n"
-            $fileEntries += "    <hash xmlns:dsig=`"http://www.w3.org/2000/09/xmldsig#`">`r`n"
-            $fileEntries += "      <dsig:Transforms><dsig:Transform Algorithm=`"urn:schemas-microsoft-com:HashTransforms.Identity`"/></dsig:Transforms>`r`n"
-            $fileEntries += "      <dsig:DigestMethod Algorithm=`"http://www.w3.org/2000/09/xmldsig#sha256`"/>`r`n"
-            $fileEntries += "      <dsig:DigestValue>$b64hash</dsig:DigestValue>`r`n"
-            $fileEntries += "    </hash>`r`n"
-            $fileEntries += "  </file>`r`n"
-          }
+          # 1. Gera o application manifest via mage
+          & $mageExe -New Application `
+            -ToFile "$appDir\D365SupportAssistant.exe.manifest" `
+            -Name "D365 Support Assistant" `
+            -Version $version `
+            -FromDirectory "$appDir" `
+            -TrustLevel FullTrust
+          Write-Host "✓ Application manifest gerado"
 
-          # ── Gera .exe.manifest manualmente (sem customHostSpecified) ────────
-          $appManifestPath = "$appDir\D365SupportAssistant.exe.manifest"
-          $appManifestXml  = '<?xml version="1.0" encoding="utf-8"?>' + "`r`n"
-          $appManifestXml += '<asmv1:assembly manifestVersion="1.0"' + "`r`n"
-          $appManifestXml += '  xmlns:asmv1="urn:schemas-microsoft-com:asm.v1"' + "`r`n"
-          $appManifestXml += '  xmlns="urn:schemas-microsoft-com:asm.v2"' + "`r`n"
-          $appManifestXml += '  xmlns:asmv2="urn:schemas-microsoft-com:asm.v2"' + "`r`n"
-          $appManifestXml += '  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' + "`r`n"
-          $appManifestXml += '  xmlns:co.v1="urn:schemas-microsoft-com:clickonce.v1"' + "`r`n"
-          $appManifestXml += '  xmlns:co.v2="urn:schemas-microsoft-com:clickonce.v2">' + "`r`n"
-          $appManifestXml += "  <assemblyIdentity name=`"D365SupportAssistant.exe`" version=`"$version`" language=`"neutral`" processorArchitecture=`"amd64`" xmlns=`"urn:schemas-microsoft-com:asm.v1`"/>`r`n"
-          $appManifestXml += "  <description asmv2:iconFile=`"`" xmlns=`"urn:schemas-microsoft-com:asm.v1`"/>`r`n"
-          $appManifestXml += '  <application/>' + "`r`n"
-          $appManifestXml += '  <entryPoint>' + "`r`n"
-          $appManifestXml += "    <assemblyIdentity name=`"D365SupportAssistant`" version=`"$version`" language=`"neutral`" processorArchitecture=`"amd64`"/>`r`n"
-          $appManifestXml += "    <commandLine file=`"D365SupportAssistant.exe`" parameters=`"`"/>`r`n"
-          $appManifestXml += '  </entryPoint>' + "`r`n"
-          $appManifestXml += '  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">' + "`r`n"
-          $appManifestXml += '    <security><applicationRequestMinimum>' + "`r`n"
-          $appManifestXml += '      <PermissionSet Unrestricted="true" ID="Custom" SameSite="site"/>' + "`r`n"
-          $appManifestXml += '    </applicationRequestMinimum></security>' + "`r`n"
-          $appManifestXml += '  </trustInfo>' + "`r`n"
-          $appManifestXml += '  <dependency>' + "`r`n"
-          $appManifestXml += '    <dependentOS><osVersionInfo><os majorVersion="6" minorVersion="0" buildNumber="0" servicePackMajor="0"/></osVersionInfo></dependentOS>' + "`r`n"
-          $appManifestXml += '  </dependency>' + "`r`n"
-          $appManifestXml += '  <dependency>' + "`r`n"
-          $appManifestXml += '    <dependentAssembly dependencyType="preRequisite" allowDelayedBinding="true">' + "`r`n"
-          $appManifestXml += '      <assemblyIdentity name="Microsoft.Windows.CommonLanguageRuntime" version="4.0.0.0"/>' + "`r`n"
-          $appManifestXml += '    </dependentAssembly>' + "`r`n"
-          $appManifestXml += '  </dependency>' + "`r`n"
-          $appManifestXml += $fileEntries
-          $appManifestXml += '</asmv1:assembly>'
-          [System.IO.File]::WriteAllText($appManifestPath, $appManifestXml, [System.Text.Encoding]::UTF8)
-          Write-Host "✓ .exe.manifest gerado manualmente (sem customHostSpecified)"
+          # 2. Remove atributos problemáticos para WPF .NET 8
+          $appManPath = "$appDir\D365SupportAssistant.exe.manifest"
+          $xml = [System.IO.File]::ReadAllText($appManPath)
+          $xml = $xml -replace '\s*customHostSpecified\s*=\s*"[^"]*"', ''
+          $xml = $xml -replace '\s*hostInBrowser\s*=\s*"[^"]*"', ''
+          [System.IO.File]::WriteAllText($appManPath, $xml, [System.Text.Encoding]::UTF8)
+          Write-Host "✓ Atributos WinForms removidos do application manifest"
 
-          # ── Gera .application manualmente (sem mage.exe) ────────────────────
-          # publicKeyToken=neutral é aceito pelo dfshim quando não há assinatura forte
-          $verU   = $version.Replace('.','_')
-          $relManifest = "Application Files/D365SupportAssistant_$verU/D365SupportAssistant.exe.manifest"
-          $depXml  = '<?xml version="1.0" encoding="utf-8"?>' + "`r`n"
-          $depXml += '<asmv1:assembly manifestVersion="1.0"' + "`r`n"
-          $depXml += '  xmlns:asmv1="urn:schemas-microsoft-com:asm.v1"' + "`r`n"
-          $depXml += '  xmlns="urn:schemas-microsoft-com:asm.v2"' + "`r`n"
-          $depXml += '  xmlns:asmv2="urn:schemas-microsoft-com:asm.v2"' + "`r`n"
-          $depXml += '  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' + "`r`n"
-          $depXml += '  xmlns:co.v1="urn:schemas-microsoft-com:clickonce.v1"' + "`r`n"
-          $depXml += '  xmlns:co.v2="urn:schemas-microsoft-com:clickonce.v2">' + "`r`n"
-          $depXml += "  <assemblyIdentity name=`"D365SupportAssistant.application`" version=`"$version`" publicKeyToken=`"0000000000000000`" language=`"neutral`" processorArchitecture=`"amd64`" xmlns=`"urn:schemas-microsoft-com:asm.v1`"/>`r`n"
-          $depXml += "  <description asmv2:publisher=`"p4rzv4l`" asmv2:product=`"D365 Support Assistant`" asmv2:supportUrl=`"$installUrl`" xmlns=`"urn:schemas-microsoft-com:asm.v1`"/>`r`n"
-          $depXml += '  <deployment install="true" mapFileExtensions="true">' + "`r`n"
-          $depXml += '    <subscription><update><beforeApplicationStartup/></update></subscription>' + "`r`n"
-          $depXml += "    <deploymentProvider codebase=`"${installUrl}D365SupportAssistant.application`"/>`r`n"
-          $depXml += '  </deployment>' + "`r`n"
-          $depXml += '  <compatibleFrameworks xmlns="urn:schemas-microsoft-com:clickonce.v2">' + "`r`n"
-          $depXml += '    <framework targetVersion="4.0" profile="Full" supportedRuntime="4.0.30319"/>' + "`r`n"
-          $depXml += '  </compatibleFrameworks>' + "`r`n"
-          $depXml += '  <dependency>' + "`r`n"
-          $depXml += '    <dependentAssembly dependencyType="install" codebase="' + $relManifest + '" size="1">' + "`r`n"
-          $depXml += "      <assemblyIdentity name=`"D365SupportAssistant.exe`" version=`"$version`" language=`"neutral`" processorArchitecture=`"amd64`"/>`r`n"
-          $depXml += '    </dependentAssembly>' + "`r`n"
-          $depXml += '  </dependency>' + "`r`n"
-          $depXml += '</asmv1:assembly>'
-          [System.IO.File]::WriteAllText("$pagesDir\D365SupportAssistant.application", $depXml, [System.Text.Encoding]::UTF8)
-          Write-Host "✓ Deployment manifest gerado manualmente"
+          # 3. Assina o application manifest com o certificado auto-assinado
+          & $mageExe -Sign "$appManPath" -CertFile "$certPath" -Password "$certPwd"
+          Write-Host "✓ Application manifest assinado"
 
-
-
-          # Renomeia arquivos para .deploy (padrão ClickOnce)
+          # 4. Renomeia arquivos para .deploy ANTES de gerar o deployment manifest
           Get-ChildItem -Recurse $appDir |
             Where-Object { -not $_.PSIsContainer -and $_.Extension -ne ".manifest" } |
-            ForEach-Object {
-              $newName = $_.FullName + ".deploy"
-              Rename-Item -Path $_.FullName -NewName $newName
-            }
+            ForEach-Object { Rename-Item -Path $_.FullName -NewName ($_.FullName + ".deploy") }
           Write-Host "✓ Arquivos renomeados para .deploy"
+
+          # 5. Gera o deployment manifest (.application) referenciando o manifest assinado
+          & $mageExe -New Deployment `
+            -ToFile "$pagesDir\D365SupportAssistant.application" `
+            -Name "D365 Support Assistant" `
+            -Version $version `
+            -AppManifest "$appManPath" `
+            -ProviderUrl "${installUrl}D365SupportAssistant.application" `
+            -Install true `
+            -Publisher "p4rzv4l" `
+            -SupportUrl $installUrl
+          Write-Host "✓ Deployment manifest gerado"
+
+          # 6. Assina o deployment manifest
+          & $mageExe -Sign "$pagesDir\D365SupportAssistant.application" `
+            -CertFile "$certPath" -Password "$certPwd"
+          Write-Host "✓ Deployment manifest assinado"
 
           # Lista resultado final
           Write-Host ""
           Write-Host "=== Conteúdo final de pages-out ==="
           Get-ChildItem -Recurse $pagesDir | Select-Object FullName
 
-      # ── PASSO 3: Verificar que o .application foi gerado ──────────────────
+      # ── PASSO 4: Verificar que o .application foi gerado ──────────────────
       - name: Verificar .application
         shell: pwsh
         run: |
           $pagesDir = "${{ github.workspace }}\pages-out"
-          $version  = "${{ steps.version.outputs.CLICKONCE_VERSION }}"
-          $appDir   = "$pagesDir\Application Files\D365SupportAssistant_$($version.Replace('.','_'))"
           $appFile  = Get-ChildItem $pagesDir -Filter "*.application" -ErrorAction SilentlyContinue
           if (-not $appFile) {
             Write-Error "✗ .application não encontrado em $pagesDir"
@@ -213,26 +201,7 @@ jobs:
           }
           Write-Host "✓ $($appFile.Name) encontrado — OK"
 
-          # ── Diagnóstico: mostra linhas com atributos suspeitos nos dois manifests ──
-          Write-Host ""
-          Write-Host "=== Grep: customHostSpecified / hostInBrowser ==="
-          $manifests = @(
-            "$appDir\D365SupportAssistant.exe.manifest",
-            "$pagesDir\D365SupportAssistant.application"
-          )
-          foreach ($f in $manifests) {
-            Write-Host "--- $(Split-Path $f -Leaf) ---"
-            if (Test-Path $f) {
-              $lines = [System.IO.File]::ReadAllLines($f)
-              $hits  = $lines | Where-Object { $_ -match 'customHostSpecified|hostInBrowser|entryPoint' }
-              if ($hits) { $hits | ForEach-Object { Write-Host $_ } }
-              else        { Write-Host "(nenhum hit)" }
-            } else {
-              Write-Host "(arquivo não encontrado)"
-            }
-          }
-
-      # ── PASSO 4: Criar index.html ─────────────────────────────────────────
+      # ── PASSO 5: Criar index.html ──────────────────────────────────────────
       - name: Criar index.html
         shell: pwsh
         run: |
