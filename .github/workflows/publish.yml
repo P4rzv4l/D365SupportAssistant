@@ -138,15 +138,26 @@ jobs:
               -SupportUrl $installUrl
             Write-Host "✓ Deployment manifest gerado"
 
-            # ── Patch: remove customHostSpecified do .exe.manifest (inválido para WinForms) ──
-            $manifestPath = "$appDir\D365SupportAssistant.exe.manifest"
-            $manifestXml  = [System.IO.File]::ReadAllText($manifestPath)
-            # Remove o atributo customHostSpecified="true" ou "false" onde quer que esteja
-            $manifestXml  = $manifestXml -replace '\s*customHostSpecified\s*=\s*"[^"]*"', ''
-            # Remove o atributo hostInBrowser="true" ou "false" (mesmo problema)
-            $manifestXml  = $manifestXml -replace '\s*hostInBrowser\s*=\s*"[^"]*"', ''
-            [System.IO.File]::WriteAllText($manifestPath, $manifestXml, [System.Text.Encoding]::UTF8)
-            Write-Host "✓ Patch aplicado: customHostSpecified/hostInBrowser removidos do manifest"
+            # ── Patch: remove customHostSpecified/hostInBrowser dos dois manifests ──
+            # O atributo é inválido para WPF .NET 8 com o dfshim.dll legado do Windows
+            $filesToPatch = @(
+              "$appDir\D365SupportAssistant.exe.manifest",
+              "$pagesDir\D365SupportAssistant.application"
+            )
+            foreach ($f in $filesToPatch) {
+              if (Test-Path $f) {
+                $content = [System.IO.File]::ReadAllText($f)
+                $before  = $content
+                $content = $content -replace '\s*customHostSpecified\s*=\s*"[^"]*"', ''
+                $content = $content -replace '\s*hostInBrowser\s*=\s*"[^"]*"', ''
+                if ($content -ne $before) {
+                  [System.IO.File]::WriteAllText($f, $content, [System.Text.Encoding]::UTF8)
+                  Write-Host "✓ Patch aplicado em: $(Split-Path $f -Leaf)"
+                } else {
+                  Write-Host "ℹ Atributo não encontrado em: $(Split-Path $f -Leaf)"
+                }
+              }
+            }
           } else {
             # Fallback: cria um .application mínimo manualmente (sem heredoc para evitar erro YAML)
             Write-Host "→ Criando .application manualmente (fallback)"
@@ -212,12 +223,33 @@ jobs:
         shell: pwsh
         run: |
           $pagesDir = "${{ github.workspace }}\pages-out"
+          $version  = "${{ steps.version.outputs.CLICKONCE_VERSION }}"
+          $appDir   = "$pagesDir\Application Files\D365SupportAssistant_$($version.Replace('.','_'))"
           $appFile  = Get-ChildItem $pagesDir -Filter "*.application" -ErrorAction SilentlyContinue
           if (-not $appFile) {
             Write-Error "✗ .application não encontrado em $pagesDir"
             exit 1
           }
           Write-Host "✓ $($appFile.Name) encontrado — OK"
+
+          # ── Diagnóstico: mostra linhas com atributos suspeitos nos dois manifests ──
+          Write-Host ""
+          Write-Host "=== Grep: customHostSpecified / hostInBrowser ==="
+          $manifests = @(
+            "$appDir\D365SupportAssistant.exe.manifest",
+            "$pagesDir\D365SupportAssistant.application"
+          )
+          foreach ($f in $manifests) {
+            Write-Host "--- $(Split-Path $f -Leaf) ---"
+            if (Test-Path $f) {
+              $lines = [System.IO.File]::ReadAllLines($f)
+              $hits  = $lines | Where-Object { $_ -match 'customHostSpecified|hostInBrowser|entryPoint' }
+              if ($hits) { $hits | ForEach-Object { Write-Host $_ } }
+              else        { Write-Host "(nenhum hit)" }
+            } else {
+              Write-Host "(arquivo não encontrado)"
+            }
+          }
 
       # ── PASSO 4: Criar index.html ─────────────────────────────────────────
       - name: Criar index.html
