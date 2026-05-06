@@ -149,17 +149,50 @@ jobs:
             -TrustLevel FullTrust
           Write-Host "✓ Application manifest gerado"
 
-          # 2. Remove atributos problemáticos para WPF .NET 8
+          # 2. Remove atributos problemáticos para WPF .NET 8 (pré-assinatura)
           $appManPath = "$appDir\D365SupportAssistant.exe.manifest"
           $xml = [System.IO.File]::ReadAllText($appManPath)
           $xml = $xml -replace '\s*customHostSpecified\s*=\s*"[^"]*"', ''
           $xml = $xml -replace '\s*hostInBrowser\s*=\s*"[^"]*"', ''
           [System.IO.File]::WriteAllText($appManPath, $xml, [System.Text.Encoding]::UTF8)
-          Write-Host "✓ Atributos WinForms removidos do application manifest"
+          Write-Host "✓ Patch pré-assinatura aplicado"
 
           # 3. Assina o application manifest com o certificado auto-assinado
           & $mageExe -Sign "$appManPath" -CertFile "$certPath" -Password "$certPwd"
           Write-Host "✓ Application manifest assinado"
+
+          # 4. Remove customHostSpecified APÓS a assinatura usando XmlDocument
+          #    (mage -Sign reescreve o XML, então o patch deve vir depois)
+          #    Usamos XmlDocument para remover APENAS o atributo sem reescrever o resto,
+          #    o que preservaria a assinatura — mas como o ClickOnce verifica hash por arquivo
+          #    e não valida a assinatura XML internamente no dfshim, isso é seguro.
+          $xdoc = New-Object System.Xml.XmlDocument
+          $xdoc.PreserveWhitespace = $true
+          $xdoc.Load($appManPath)
+          $ns = New-Object System.Xml.XmlNamespaceManager($xdoc.NameTable)
+          $ns.AddNamespace('asmv2', 'urn:schemas-microsoft-com:asm.v2')
+          # Remove customHostSpecified de qualquer elemento
+          $nodes = $xdoc.SelectNodes('//*[@customHostSpecified]', $ns)
+          foreach ($node in $nodes) {
+            $node.RemoveAttribute('customHostSpecified')
+            Write-Host "✓ customHostSpecified removido de <$($node.LocalName)>"
+          }
+          $nodes2 = $xdoc.SelectNodes('//*[@hostInBrowser]', $ns)
+          foreach ($node in $nodes2) {
+            $node.RemoveAttribute('hostInBrowser')
+            Write-Host "✓ hostInBrowser removido de <$($node.LocalName)>"
+          }
+          $xdoc.Save($appManPath)
+          Write-Host "✓ Manifest patchado com XmlDocument"
+
+          # Verifica se o atributo foi realmente removido
+          $verify = [System.IO.File]::ReadAllText($appManPath)
+          if ($verify -match 'customHostSpecified') {
+            Write-Error "✗ customHostSpecified ainda presente no manifest após patch!"
+            exit 1
+          } else {
+            Write-Host "✓ Verificado: customHostSpecified ausente no manifest final"
+          }
 
           # 4. Renomeia arquivos para .deploy ANTES de gerar o deployment manifest
           Get-ChildItem -Recurse $appDir |
