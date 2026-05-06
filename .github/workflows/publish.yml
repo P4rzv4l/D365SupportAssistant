@@ -173,46 +173,40 @@ jobs:
 
           # Remove qualquer variação do atributo (com ou sem namespace prefix)
           $patched = $rawXml
-          $patched = $patched -replace '<[^>]*customHostSpecified[^>]*/>', ''
-          $patched = $patched -replace '<[^>]*customHostSpecified[^>]*>.*?</[^>]*customHostSpecified[^>]*>', ''
-          $patched = $patched -replace '<[^>]*hostInBrowser[^>]*/>', ''
-          $patched = $patched -replace '\s*[a-zA-Z0-9:]*customHostSpecified\s*=\s*"[^"]*"', ''
+          $patched = $patched -replace '[a-zA-Z0-9:]*customHostSpecified\s*=\s*"[^"]*"', ''
+          $patched = $patched -replace '[a-zA-Z0-9:]*hostInBrowser\s*=\s*"[^"]*"', ''
           [System.IO.File]::WriteAllText($appManPath, $patched, [System.Text.Encoding]::UTF8)
-          Write-Host "✓ Patch pós-assinatura aplicado"
+          # 5. Corrige o entryPoint — mage usa o nome interno do assembly (MyApplication.app)
+          #    mas o dfshim precisa encontrar o arquivo pelo nome correto
+          $rawXml2 = [System.IO.File]::ReadAllText($appManPath)
+
+          # Log do entryPoint atual para diagnóstico
+          Write-Host "=== entryPoint atual ==="
+          $rawXml2 -split "`n" | Where-Object { $_ -match 'entryPoint|commandLine|assemblyIdentity' } |
+            Select-Object -First 10 | ForEach-Object { Write-Host $_ }
+          Write-Host "=== fim ==="
+
+          # Substitui o bloco entryPoint inteiro por um correto apontando para o .exe
+          $entryPointNew  = "  <entryPoint xmlns=`"urn:schemas-microsoft-com:asm.v2`">`r`n"
+          $entryPointNew += "    <assemblyIdentity name=`"D365SupportAssistant`" version=`"$version`" language=`"neutral`" processorArchitecture=`"amd64`" />`r`n"
+          $entryPointNew += "    <commandLine file=`"D365SupportAssistant.exe`" parameters=`"`" />`r`n"
+          $entryPointNew += "  </entryPoint>"
+          # Remove o entryPoint existente e insere o correto antes do fechamento do assembly
+          $rawXml2 = $rawXml2 -replace '(?s)<entryPoint[^>]*>.*?</entryPoint>', $entryPointNew
+          [System.IO.File]::WriteAllText($appManPath, $rawXml2, [System.Text.Encoding]::UTF8)
+          Write-Host "✓ entryPoint corrigido para D365SupportAssistant.exe"
 
           # Verifica se o atributo foi realmente removido
           $verify = [System.IO.File]::ReadAllText($appManPath)
           if ($verify -match 'customHostSpecified') {
-              Write-Host "⚠ customHostSpecified ainda presente — tentando remoção XML direta"
-              
-              # Abordagem XML para garantir remoção
-              $xmlDoc = New-Object System.Xml.XmlDocument
-              $xmlDoc.Load($appManPath)
-              
-              $ns = New-Object System.Xml.XmlNamespaceManager($xmlDoc.NameTable)
-              $ns.AddNamespace("co.v1", "urn:schemas-microsoft-com:clickonce.v1")
-              
-              $nodes = $xmlDoc.SelectNodes("//*[local-name()='customHostSpecified']")
-              foreach ($node in $nodes) { 
-                  $node.ParentNode.RemoveChild($node) | Out-Null 
-              }
-              $nodes2 = $xmlDoc.SelectNodes("//*[local-name()='hostInBrowser']")
-              foreach ($node in $nodes2) { 
-                  $node.ParentNode.RemoveChild($node) | Out-Null 
-              }
-              
-              $xmlDoc.Save($appManPath)
-              Write-Host "✓ Remoção XML aplicada"
-              
-              # Verifica novamente
-              $verify2 = [System.IO.File]::ReadAllText($appManPath)
-              if ($verify2 -match 'customHostSpecified') {
-                  Write-Error "✗ Falha ao remover customHostSpecified"
-                  exit 1
-              }
-          } else {
-              Write-Host "✓ Verificado: customHostSpecified ausente"
+            Write-Error "✗ customHostSpecified ainda presente no manifest após patch!"
+            exit 1
           }
+          if ($verify -notmatch 'D365SupportAssistant\.exe') {
+            Write-Error "✗ entryPoint não aponta para D365SupportAssistant.exe!"
+            exit 1
+          }
+          Write-Host "✓ Manifest final OK: sem customHostSpecified, entryPoint correto"
 
           # 4. Renomeia arquivos para .deploy ANTES de gerar o deployment manifest
           Get-ChildItem -Recurse $appDir |
