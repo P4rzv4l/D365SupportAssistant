@@ -61,7 +61,7 @@ jobs:
 
       # ── NuGet ─────────────────────────────────────────────────────────────
       - name: Restaurar NuGet
-        run: dotnet restore D365SupportAssistant.csproj
+        run: dotnet restore D365SupportAssistant.csproj -r win-x64
 
       # ── PASSO 1: dotnet publish normal (gera os binários) ─────────────────
       - name: Build e Publish binários
