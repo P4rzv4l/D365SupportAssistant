@@ -158,7 +158,7 @@ jobs:
           Write-Host "=== fim manifest ==="
 
           # ── Descobre o nome real do assembly lendo o PE ────────────────────
-          $asmName = [System.Reflection.AssemblyName]::GetAssemblyName("$appDir\D365SupportAssistant.exe").Name
+          $asmName = [System.Reflection.AssemblyName]::GetAssemblyName("$appDir\D365SupportAssistant.dll").Name
           Write-Host "✓ Nome real do assembly: $asmName"
 
           # ── Reconstrói o manifest do zero com dados corretos ───────────────
