@@ -161,29 +161,22 @@ jobs:
           & $mageExe -Sign "$appManPath" -CertFile "$certPath" -Password "$certPwd"
           Write-Host "✓ Application manifest assinado"
 
-          # 4. Remove customHostSpecified APÓS a assinatura usando XmlDocument
-          #    (mage -Sign reescreve o XML, então o patch deve vir depois)
-          #    Usamos XmlDocument para remover APENAS o atributo sem reescrever o resto,
-          #    o que preservaria a assinatura — mas como o ClickOnce verifica hash por arquivo
-          #    e não valida a assinatura XML internamente no dfshim, isso é seguro.
-          $xdoc = New-Object System.Xml.XmlDocument
-          $xdoc.PreserveWhitespace = $true
-          $xdoc.Load($appManPath)
-          $ns = New-Object System.Xml.XmlNamespaceManager($xdoc.NameTable)
-          $ns.AddNamespace('asmv2', 'urn:schemas-microsoft-com:asm.v2')
-          # Remove customHostSpecified de qualquer elemento
-          $nodes = $xdoc.SelectNodes('//*[@customHostSpecified]', $ns)
-          foreach ($node in $nodes) {
-            $node.RemoveAttribute('customHostSpecified')
-            Write-Host "✓ customHostSpecified removido de <$($node.LocalName)>"
-          }
-          $nodes2 = $xdoc.SelectNodes('//*[@hostInBrowser]', $ns)
-          foreach ($node in $nodes2) {
-            $node.RemoveAttribute('hostInBrowser')
-            Write-Host "✓ hostInBrowser removido de <$($node.LocalName)>"
-          }
-          $xdoc.Save($appManPath)
-          Write-Host "✓ Manifest patchado com XmlDocument"
+          # 4. Remove customHostSpecified APÓS a assinatura
+          #    Loga o contexto para diagnóstico e remove via regex agressivo
+          $rawXml = [System.IO.File]::ReadAllText($appManPath)
+
+          # Diagnóstico: mostra as linhas com o atributo
+          Write-Host "=== Linhas com customHostSpecified/hostInBrowser ==="
+          $rawXml -split "`n" | Where-Object { $_ -match 'customHostSpecified|hostInBrowser' } |
+            ForEach-Object { Write-Host $_ }
+          Write-Host "=== Fim diagnóstico ==="
+
+          # Remove qualquer variação do atributo (com ou sem namespace prefix)
+          $patched = $rawXml
+          $patched = $patched -replace '[a-zA-Z0-9:]*customHostSpecified\s*=\s*"[^"]*"', ''
+          $patched = $patched -replace '[a-zA-Z0-9:]*hostInBrowser\s*=\s*"[^"]*"', ''
+          [System.IO.File]::WriteAllText($appManPath, $patched, [System.Text.Encoding]::UTF8)
+          Write-Host "✓ Patch pós-assinatura aplicado"
 
           # Verifica se o atributo foi realmente removido
           $verify = [System.IO.File]::ReadAllText($appManPath)
