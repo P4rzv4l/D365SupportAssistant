@@ -1,77 +1,47 @@
 # =============================================================================
 #  .github/workflows/publish.yml
-#
-#  Publica o D365 Support Assistant via ClickOnce no GitHub Pages.
-#
-#  COMO USAR:
-#    - Push normal  → apenas compila e testa (não publica)
-#    - git tag v1.2.3 + git push --tags → publica nova versão para todos
-#
-#  SETUP NECESSÁRIO (fazer apenas uma vez):
-#    1. Repositório → Settings → Pages → Source: "GitHub Actions"
-#    2. Repositório → Settings → Secrets → Actions → New secret:
-#       SIGNING_CERT_PFX  = base64 do seu certificado .pfx
-#       SIGNING_CERT_PWD  = senha do certificado
-#       (se não tiver certificado, veja a seção "Sem certificado" abaixo)
 # =============================================================================
 
 name: Publicar D365 Support Assistant
 
 on:
-  # Publica ao criar uma tag de versão (ex: v1.0.0, v1.2.3)
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
-
-  # Permite executar manualmente pela aba Actions do GitHub
   workflow_dispatch:
     inputs:
       version:
-        description: 'Versão a publicar (ex: 1.2.0)'
+        description: 'Versão a publicar (ex: 1.0.0)'
         required: true
         default: '1.0.0'
-      force:
-        description: 'Forçar publicação mesmo sem tag'
-        type: boolean
-        default: false
 
-# Permissão para escrever no GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Garante que só uma publicação ocorra por vez
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  # ─────────────────────────────────────────────────────────────────────────
-  #  JOB 1: Build e Publish ClickOnce
-  # ─────────────────────────────────────────────────────────────────────────
   build-and-publish:
     name: Build e Publicar ClickOnce
     runs-on: windows-latest
 
     steps:
-      # 1. Checkout do código
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # necessário para git describe
 
-      # 2. Instalar .NET 8
       - name: Instalar .NET 8
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
-      # 3. Instalar MSBuild (necessário para ClickOnce)
       - name: Instalar MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      # 4. Determinar a versão a publicar
+      # ── Determinar versão ──────────────────────────────────────────────────
       - name: Determinar versão
         id: version
         shell: pwsh
@@ -79,126 +49,108 @@ jobs:
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
             $ver = "${{ github.event.inputs.version }}"
           } else {
-            # Remove o 'v' da tag (v1.2.3 → 1.2.3)
             $ver = "${{ github.ref_name }}".TrimStart("v")
           }
 
-          # Converte para formato ClickOnce (X.Y.Z.0)
+          # Garante formato X.Y.Z.BUILD para o ClickOnce
           $parts = $ver.Split(".")
           while ($parts.Count -lt 4) { $parts += "0" }
           $clickonce = $parts[0..3] -join "."
 
-          echo "VERSION=$ver" >> $env:GITHUB_OUTPUT
+          echo "VERSION=$ver"               >> $env:GITHUB_OUTPUT
           echo "CLICKONCE_VERSION=$clickonce" >> $env:GITHUB_OUTPUT
-          Write-Host "✓ Versão: $ver → ClickOnce: $clickonce"
+          Write-Host "✓ Versão: $ver  →  ClickOnce: $clickonce"
 
-      # 5. Restaurar dependências
+      # ── Restaurar NuGet ────────────────────────────────────────────────────
       - name: Restaurar pacotes NuGet
-        run: dotnet restore D365SupportAssistant.csproj -r win-x64
+        run: dotnet restore D365SupportAssistant.csproj
 
-      # 6. Importar certificado de assinatura (se configurado)
-      - name: Importar certificado de assinatura
-        id: cert
-        shell: pwsh
-        # Se o secret SIGNING_CERT_PFX não existir, pula silenciosamente
-        run: |
-          $certB64 = "${{ secrets.SIGNING_CERT_PFX }}"
-          if ([string]::IsNullOrEmpty($certB64)) {
-            Write-Host "⚠ Certificado não configurado — publicando sem assinatura"
-            echo "HAS_CERT=false" >> $env:GITHUB_OUTPUT
-          } else {
-            $certBytes = [Convert]::FromBase64String($certB64)
-            $certPath  = "$env:TEMP\signing.pfx"
-            [IO.File]::WriteAllBytes($certPath, $certBytes)
-
-            # Importa para o store do usuário atual
-            $pwd = ConvertTo-SecureString "${{ secrets.SIGNING_CERT_PWD }}" -AsPlainText -Force
-            Import-PfxCertificate -FilePath $certPath -CertStoreLocation Cert:\CurrentUser\My -Password $pwd | Out-Null
-
-            echo "HAS_CERT=true"  >> $env:GITHUB_OUTPUT
-            echo "CERT_PATH=$certPath" >> $env:GITHUB_OUTPUT
-            Write-Host "✓ Certificado importado"
-          }
-
-      # 7. Publicar ClickOnce
+      # ── Publicar ClickOnce via MSBuild ────────────────────────────────────
+      #
+      #  IMPORTANTE:
+      #   - Usamos MSBuild diretamente (não dotnet publish) porque ClickOnce
+      #     requer o target "Publish" do MSBuild clássico.
+      #   - SignManifests=false: sem certificado por enquanto.
+      #   - GenerateBootstrapper=false: não gera setup.exe (requer componentes
+      #     extras do VS — usaremos só o .application para instalação via URL).
+      #
       - name: Publicar ClickOnce
         shell: pwsh
         run: |
-          $version  = "${{ steps.version.outputs.CLICKONCE_VERSION }}"
+          $version    = "${{ steps.version.outputs.CLICKONCE_VERSION }}"
           $installUrl = "https://p4rzv4l.github.io/D365SupportAssistant/"
-          $hasCert  = "${{ steps.cert.outputs.HAS_CERT }}" -eq "true"
+          $publishDir = "${{ github.workspace }}\clickonce-out\"
 
-          Write-Host "→ Publicando versão $version"
-          Write-Host "→ Install URL: $installUrl"
+          Write-Host "→ Versão ClickOnce : $version"
+          Write-Host "→ Install URL      : $installUrl"
+          Write-Host "→ Publish Dir      : $publishDir"
 
-          # Parâmetros base do MSBuild
-          $params = @(
-            "D365SupportAssistant.csproj",
-            "/t:Publish",
-            "/p:Configuration=Release",
-            "/p:PublishDir=.\publish\",
-            "/p:InstallUrl=$installUrl",
-            "/p:ApplicationVersion=$version",
-            "/p:UpdateEnabled=true",
-            "/p:UpdateMode=Foreground",
-            "/p:MapFileExtensions=true",
-            "/p:BootstrapperEnabled=true",
-            "/p:PublisherName=p4rzv4l",
-            "/p:ProductName=D365 Support Assistant",
-            "/p:SupportUrl=$installUrl",
-            "/p:ErrorReportUrl=$installUrl",
-            "/p:TargetFramework=net8.0-windows10.0.17763.0",
-            "/p:SelfContained=false",
-            "/p:RuntimeIdentifier=win-x64"
-          )
-
-          $params += "/p:PublishProtocol=ClickOnce"
-          $params += "/p:GenerateManifests=true"
-          $params += "/p:Install=true"
-
-          # Adiciona parâmetros de assinatura se houver certificado
-          if ($hasCert) {
-            $params += "/p:SignManifests=true"
-            $params += "/p:CertificateThumbprint=$(
-              (Get-ChildItem Cert:\CurrentUser\My | 
-               Where-Object Subject -like '*D365SupportAssistant.pfx*' | 
-               Select-Object -First 1).Thumbprint
-            )"
-          } else {
-            $params += "/p:SignManifests=false"
-          }
-
-          # Executa o publish
-          & msbuild @params
+          msbuild D365SupportAssistant.csproj `
+            /t:Publish `
+            /p:Configuration=Release `
+            /p:Platform=x64 `
+            /p:PublishDir="$publishDir" `
+            /p:InstallUrl="$installUrl" `
+            /p:ApplicationVersion="$version" `
+            /p:UpdateEnabled=true `
+            /p:UpdateMode=Foreground `
+            /p:MapFileExtensions=true `
+            /p:SignManifests=false `
+            /p:GenerateBootstrapper=false `
+            /p:BootstrapperEnabled=false `
+            /p:PublisherName="p4rzv4l" `
+            /p:ProductName="D365 Support Assistant" `
+            /p:SupportUrl="$installUrl" `
+            /p:TargetFramework=net8.0-windows10.0.17763.0 `
+            /p:RuntimeIdentifier=win-x64 `
+            /p:SelfContained=false `
+            /nologo
 
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "✗ MSBuild falhou com código $LASTEXITCODE"
+            Write-Error "✗ MSBuild falhou (código $LASTEXITCODE)"
             exit 1
           }
 
-          Write-Host "✓ Publicação concluída"
+          Write-Host "✓ MSBuild concluído"
 
-      # 8. Verificar arquivos gerados
-      - name: Verificar arquivos gerados
+      # ── Verificar saída ────────────────────────────────────────────────────
+      - name: Verificar arquivos ClickOnce
         shell: pwsh
         run: |
-          Write-Host "=== Arquivos gerados em .\publish\ ==="
-          Get-ChildItem -Recurse .\publish\ | Select-Object FullName | Format-Table -AutoSize
+          $publishDir = "${{ github.workspace }}\clickonce-out\"
 
-          # Verifica que o .application existe
-          $appFile = Get-ChildItem .\publish\ -Filter "*.application" -ErrorAction SilentlyContinue
+          Write-Host "=== Conteúdo de $publishDir ==="
+          Get-ChildItem -Recurse $publishDir | Select-Object FullName
+
+          $appFile = Get-ChildItem $publishDir -Filter "*.application" -Recurse -ErrorAction SilentlyContinue
           if (-not $appFile) {
-            Write-Error "✗ Arquivo .application não encontrado!"
+            Write-Error "✗ Arquivo .application não encontrado! Verifique os logs do MSBuild acima."
             exit 1
           }
-          Write-Host "✓ $($appFile.Name) gerado com sucesso"
+          Write-Host "✓ Encontrado: $($appFile.FullName)"
 
-      # 9. Criar index.html com página de download
-      - name: Criar página de download (index.html)
+      # ── Preparar pasta final para o Pages ─────────────────────────────────
+      - name: Preparar pasta de deploy
+        shell: pwsh
+        run: |
+          $src  = "${{ github.workspace }}\clickonce-out\"
+          $dest = "${{ github.workspace }}\pages-out\"
+
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+
+          # Copia tudo que o ClickOnce gerou
+          Copy-Item -Recurse -Force "$src*" $dest
+
+          Write-Host "✓ Arquivos copiados para $dest"
+          Get-ChildItem $dest | Select-Object Name
+
+      # ── Criar página de download ───────────────────────────────────────────
+      - name: Criar index.html
         shell: pwsh
         run: |
           $version = "${{ steps.version.outputs.VERSION }}"
           $date    = (Get-Date -Format "dd/MM/yyyy HH:mm")
+          $dest    = "${{ github.workspace }}\pages-out\"
 
           $html = @"
           <!DOCTYPE html>
@@ -206,143 +158,79 @@ jobs:
           <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>D365 Support Assistant — Download</title>
+            <title>D365 Support Assistant</title>
             <style>
-              * { box-sizing: border-box; margin: 0; padding: 0; }
-              body {
-                font-family: 'Segoe UI', sans-serif;
-                background: #0D1117;
-                color: #E6EDF3;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                min-height: 100vh;
-              }
-              .card {
-                background: #161B22;
-                border: 1px solid #30363D;
-                border-radius: 12px;
-                padding: 40px 48px;
-                max-width: 560px;
-                width: 100%;
-                text-align: center;
-              }
-              .logo { font-size: 48px; margin-bottom: 16px; }
-              h1 { font-size: 24px; font-weight: 700; color: #E6EDF3; margin-bottom: 8px; }
-              .version {
-                display: inline-block;
-                background: #7C3AED22;
-                color: #A78BFA;
-                border: 1px solid #7C3AED55;
-                border-radius: 20px;
-                padding: 4px 16px;
-                font-size: 13px;
-                margin-bottom: 24px;
-              }
-              p { color: #8B949E; font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
-              .btn {
-                display: block;
-                background: #7C3AED;
-                color: white;
-                text-decoration: none;
-                padding: 14px 32px;
-                border-radius: 8px;
-                font-size: 16px;
-                font-weight: 600;
-                margin-bottom: 12px;
-                transition: background 0.2s;
-              }
-              .btn:hover { background: #6D28D9; }
-              .btn-secondary {
-                display: block;
-                background: transparent;
-                color: #58A6FF;
-                text-decoration: none;
-                padding: 10px 32px;
-                border-radius: 8px;
-                font-size: 14px;
-                border: 1px solid #30363D;
-                margin-bottom: 24px;
-              }
-              .note {
-                background: #0D1117;
-                border: 1px solid #30363D;
-                border-radius: 8px;
-                padding: 12px 16px;
-                font-size: 12px;
-                color: #484F58;
-                text-align: left;
-              }
-              .note strong { color: #8B949E; }
-              .date { font-size: 11px; color: #30363D; margin-top: 20px; }
+              *{box-sizing:border-box;margin:0;padding:0}
+              body{font-family:'Segoe UI',sans-serif;background:#0D1117;color:#E6EDF3;
+                   display:flex;align-items:center;justify-content:center;min-height:100vh}
+              .card{background:#161B22;border:1px solid #30363D;border-radius:12px;
+                    padding:40px 48px;max-width:560px;width:100%;text-align:center}
+              .logo{font-size:48px;margin-bottom:16px}
+              h1{font-size:24px;font-weight:700;margin-bottom:8px}
+              .ver{display:inline-block;background:#7C3AED22;color:#A78BFA;
+                   border:1px solid #7C3AED55;border-radius:20px;
+                   padding:4px 16px;font-size:13px;margin-bottom:24px}
+              p{color:#8B949E;font-size:14px;line-height:1.6;margin-bottom:24px}
+              .btn{display:block;background:#7C3AED;color:#fff;text-decoration:none;
+                   padding:14px 32px;border-radius:8px;font-size:16px;
+                   font-weight:600;margin-bottom:12px}
+              .btn:hover{background:#6D28D9}
+              .note{background:#0D1117;border:1px solid #30363D;border-radius:8px;
+                    padding:12px 16px;font-size:12px;color:#484F58;text-align:left}
+              .note strong{color:#8B949E}
+              .date{font-size:11px;color:#30363D;margin-top:20px}
             </style>
           </head>
           <body>
             <div class="card">
               <div class="logo">📊</div>
               <h1>D365 Support Assistant</h1>
-              <span class="version">v$version</span>
-
-              <p>
-                Monitor de chamados para Microsoft Dynamics 365.<br>
-                Alertas automáticos, tracker de tempo e análise por IA.
-              </p>
-
-              <a class="btn" href="setup.exe">
-                ⬇ Instalar (setup.exe)
+              <span class="ver">v$version</span>
+              <p>Monitor de chamados para Microsoft Dynamics 365.<br>
+                 Alertas automáticos, tracker de tempo e análise por IA.</p>
+              <a class="btn" href="D365SupportAssistant.application">
+                ⬇ Instalar via ClickOnce
               </a>
-              <a class="btn-secondary" href="D365SupportAssistant.application">
-                ↗ Instalar via ClickOnce (já tenho .NET 8)
-              </a>
-
               <div class="note">
-                <strong>Requisitos:</strong> Windows 10/11 64-bit<br>
-                O <strong>setup.exe</strong> instala o .NET 8 Runtime automaticamente se necessário.<br>
-                <br>
-                <strong>Atualização automática:</strong> O app verifica por novas versões ao iniciar.
+                <strong>Requisito:</strong> Windows 10/11 64-bit + 
+                <a href="https://dotnet.microsoft.com/download/dotnet/8.0" 
+                   style="color:#58A6FF">.NET 8 Desktop Runtime</a><br><br>
+                <strong>Atualização automática:</strong> o app verifica por novas 
+                versões ao iniciar e atualiza sozinho.
               </div>
-
-              <div class="date">Publicado em $date UTC · versão $version</div>
+              <div class="date">Publicado em $date · v$version</div>
             </div>
           </body>
           </html>
           "@
 
-          $html | Out-File -FilePath ".\publish\index.html" -Encoding UTF8
+          $html | Out-File -FilePath "${dest}index.html" -Encoding UTF8
           Write-Host "✓ index.html criado"
 
-      # 10. Upload do artefato para o GitHub Pages
+      # ── Upload para GitHub Pages ───────────────────────────────────────────
       - name: Upload para GitHub Pages
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./publish
+          path: ./pages-out
 
-  # ─────────────────────────────────────────────────────────────────────────
-  #  JOB 2: Deploy no GitHub Pages
-  # ─────────────────────────────────────────────────────────────────────────
+  # ── Deploy ────────────────────────────────────────────────────────────────
   deploy:
     name: Deploy GitHub Pages
     needs: build-and-publish
     runs-on: ubuntu-latest
-
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-
     steps:
-      - name: Deploy para GitHub Pages
+      - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
 
-      - name: Exibir URL de instalação
+      - name: Exibir URLs
         run: |
-          echo "================================"
-          echo "✅ Publicação concluída!"
+          echo "================================================"
+          echo "✅ Publicado com sucesso!"
           echo ""
-          echo "📦 Página de download:"
-          echo "   https://p4rzv4l.github.io/D365SupportAssistant/"
-          echo ""
-          echo "🔗 Links diretos:"
-          echo "   Setup: https://p4rzv4l.github.io/D365SupportAssistant/setup.exe"
-          echo "   ClickOnce: https://p4rzv4l.github.io/D365SupportAssistant/D365SupportAssistant.application"
-          echo "================================"
+          echo "📦 Página: https://p4rzv4l.github.io/D365SupportAssistant/"
+          echo "🔗 Install: https://p4rzv4l.github.io/D365SupportAssistant/D365SupportAssistant.application"
+          echo "================================================"
