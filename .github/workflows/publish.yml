@@ -134,6 +134,7 @@ jobs:
             /p:SignManifests=false `
             /p:GenerateBootstrapper=false `
             /p:BootstrapperEnabled=false `
+            /p:Publish=true `
             /v:minimal `
             /nologo
 

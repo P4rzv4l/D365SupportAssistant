@@ -57,8 +57,10 @@
 	  <Resource Include="App\Assets\logo-roxo.ico" />
 	</ItemGroup>
 
-	<Target Name="CopyAppSettings" AfterTargets="Build">
-		<Copy SourceFiles="$(MSBuildProjectDirectory)\App\appsettings.json" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="false" />
+	<Target Name="CopyAppSettings" AfterTargets="Build"
+        Condition="'$(PublishingProject)'!='true' AND '$(Publish)'!='true'">
+		<Copy SourceFiles="$(MSBuildProjectDirectory)\App\appsettings.json"
+			  DestinationFolder="$(OutputPath)" SkipUnchangedFiles="false" />
 	</Target>
 
 </Project>
