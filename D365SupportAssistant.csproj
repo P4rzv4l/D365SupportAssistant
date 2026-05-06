@@ -29,9 +29,10 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<None Include="App\appsettings.json">
+		<Content Include="App\appsettings.json">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
-		</None>
+			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
+		</Content>
 	</ItemGroup>
 
 	<ItemGroup>
