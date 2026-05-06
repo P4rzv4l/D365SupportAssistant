@@ -97,21 +97,6 @@ jobs:
           New-Item -ItemType Directory -Force -Path $appDir  | Out-Null
           New-Item -ItemType Directory -Force -Path $pagesDir | Out-Null
 
-          # Localizar mage.exe no VS
-          $mage = Get-ChildItem -Recurse "C:\Program Files\Microsoft Visual Studio\2022" `
-                    -Filter "mage.exe" -ErrorAction SilentlyContinue |
-                  Select-Object -First 1
-          if (-not $mage) {
-            $mage = Get-ChildItem -Recurse "C:\Program Files (x86)\Microsoft SDKs" `
-                      -Filter "mage.exe" -ErrorAction SilentlyContinue |
-                    Select-Object -First 1
-          }
-          if ($mage) {
-            Write-Host "✓ mage.exe encontrado: $($mage.FullName)"
-          } else {
-            Write-Host "⚠ mage.exe não encontrado — usando abordagem alternativa"
-          }
-
           # Copia binários para a pasta de versão do ClickOnce
           Copy-Item -Recurse -Force "$binDir\*" "$appDir\"
           Write-Host "✓ Binários copiados para $appDir"
@@ -168,64 +153,37 @@ jobs:
           [System.IO.File]::WriteAllText($appManifestPath, $appManifestXml, [System.Text.Encoding]::UTF8)
           Write-Host "✓ .exe.manifest gerado manualmente (sem customHostSpecified)"
 
-          if ($mage) {
-            $mageExe = $mage.FullName
-            # Usa mage APENAS para gerar o .application (deployment manifest)
-            & $mageExe -New Deployment `
-              -ToFile "$pagesDir\D365SupportAssistant.application" `
-              -Name "D365 Support Assistant" `
-              -Version $version `
-              -AppManifest "$appDir\D365SupportAssistant.exe.manifest" `
-              -ProviderUrl "${installUrl}D365SupportAssistant.application" `
-              -Install true `
-              -Publisher "p4rzv4l" `
-              -SupportUrl $installUrl
-            Write-Host "✓ Deployment manifest gerado"
-          } else {
-            # Fallback: cria um .application mínimo manualmente (sem heredoc para evitar erro YAML)
-            Write-Host "→ Criando .application manualmente (fallback)"
-            $verU = $version.Replace('.','_')
-            $xml  = '<?xml version="1.0" encoding="utf-8"?>'
-            $xml += '<asmv1:assembly xsi:schemaLocation="urn:schemas-microsoft-com:asm.v1 assembly.adaptive.xsd"'
-            $xml += ' manifestVersion="1.0"'
-            $xml += ' xmlns:asmv1="urn:schemas-microsoft-com:asm.v1"'
-            $xml += ' xmlns="urn:schemas-microsoft-com:asm.v2"'
-            $xml += ' xmlns:asmv2="urn:schemas-microsoft-com:asm.v2"'
-            $xml += ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"'
-            $xml += ' xmlns:co.v1="urn:schemas-microsoft-com:clickonce.v1"'
-            $xml += ' xmlns:co.v2="urn:schemas-microsoft-com:clickonce.v2">'
-            $xml += '<assemblyIdentity name="D365SupportAssistant.application"'
-            $xml += " version=`"$version`""
-            $xml += ' publicKeyToken="0000000000000000" language="neutral"'
-            $xml += ' processorArchitecture="amd64"'
-            $xml += ' xmlns="urn:schemas-microsoft-com:asm.v1"/>'
-            $xml += "<description asmv2:publisher=`"p4rzv4l`""
-            $xml += " asmv2:product=`"D365 Support Assistant`""
-            $xml += " asmv2:supportUrl=`"$installUrl`""
-            $xml += ' xmlns="urn:schemas-microsoft-com:asm.v1"/>'
-            $xml += '<deployment install="true" mapFileExtensions="true">'
-            $xml += '<subscription><update><beforeApplicationStartup/></update></subscription>'
-            $xml += "<deploymentProvider codebase=`"${installUrl}D365SupportAssistant.application`"/>"
-            $xml += '</deployment>'
-            $xml += '<compatibleFrameworks xmlns="urn:schemas-microsoft-com:clickonce.v2">'
-            $xml += '<framework targetVersion="4.0" profile="Full" supportedRuntime="4.0.30319"/>'
-            $xml += '</compatibleFrameworks>'
-            $xml += '<dependency><dependentAssembly dependencyType="install"'
-            $xml += " codebase=`"Application Files\D365SupportAssistant_$verU\D365SupportAssistant.exe.manifest`""
-            $xml += ' size="1">'
-            $xml += "<assemblyIdentity name=`"D365SupportAssistant.exe`" version=`"$version`""
-            $xml += ' language="neutral" processorArchitecture="amd64"/>'
-            $xml += '<hash><dsig:Transforms xmlns:dsig="http://www.w3.org/2000/09/xmldsig#">'
-            $xml += '<dsig:Transform Algorithm="urn:schemas-microsoft-com:HashTransforms.Identity"/>'
-            $xml += '</dsig:Transforms>'
-            $xml += '<dsig:DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha256"'
-            $xml += ' xmlns:dsig="http://www.w3.org/2000/09/xmldsig#"/>'
-            $xml += '<dsig:DigestValue xmlns:dsig="http://www.w3.org/2000/09/xmldsig#">AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</dsig:DigestValue>'
-            $xml += '</hash></dependentAssembly></dependency>'
-            $xml += '</asmv1:assembly>'
-            [System.IO.File]::WriteAllText("$pagesDir\D365SupportAssistant.application", $xml, [System.Text.Encoding]::UTF8)
-            Write-Host "✓ .application criado (fallback)"
-          }
+          # ── Gera .application manualmente (sem mage.exe) ────────────────────
+          # publicKeyToken=neutral é aceito pelo dfshim quando não há assinatura forte
+          $verU   = $version.Replace('.','_')
+          $relManifest = "Application Files/D365SupportAssistant_$verU/D365SupportAssistant.exe.manifest"
+          $depXml  = '<?xml version="1.0" encoding="utf-8"?>' + "`r`n"
+          $depXml += '<asmv1:assembly manifestVersion="1.0"' + "`r`n"
+          $depXml += '  xmlns:asmv1="urn:schemas-microsoft-com:asm.v1"' + "`r`n"
+          $depXml += '  xmlns="urn:schemas-microsoft-com:asm.v2"' + "`r`n"
+          $depXml += '  xmlns:asmv2="urn:schemas-microsoft-com:asm.v2"' + "`r`n"
+          $depXml += '  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' + "`r`n"
+          $depXml += '  xmlns:co.v1="urn:schemas-microsoft-com:clickonce.v1"' + "`r`n"
+          $depXml += '  xmlns:co.v2="urn:schemas-microsoft-com:clickonce.v2">' + "`r`n"
+          $depXml += "  <assemblyIdentity name=`"D365SupportAssistant.application`" version=`"$version`" publicKeyToken=`"0000000000000000`" language=`"neutral`" processorArchitecture=`"amd64`" xmlns=`"urn:schemas-microsoft-com:asm.v1`"/>`r`n"
+          $depXml += "  <description asmv2:publisher=`"p4rzv4l`" asmv2:product=`"D365 Support Assistant`" asmv2:supportUrl=`"$installUrl`" xmlns=`"urn:schemas-microsoft-com:asm.v1`"/>`r`n"
+          $depXml += '  <deployment install="true" mapFileExtensions="true">' + "`r`n"
+          $depXml += '    <subscription><update><beforeApplicationStartup/></update></subscription>' + "`r`n"
+          $depXml += "    <deploymentProvider codebase=`"${installUrl}D365SupportAssistant.application`"/>`r`n"
+          $depXml += '  </deployment>' + "`r`n"
+          $depXml += '  <compatibleFrameworks xmlns="urn:schemas-microsoft-com:clickonce.v2">' + "`r`n"
+          $depXml += '    <framework targetVersion="4.0" profile="Full" supportedRuntime="4.0.30319"/>' + "`r`n"
+          $depXml += '  </compatibleFrameworks>' + "`r`n"
+          $depXml += '  <dependency>' + "`r`n"
+          $depXml += '    <dependentAssembly dependencyType="install" codebase="' + $relManifest + '" size="1">' + "`r`n"
+          $depXml += "      <assemblyIdentity name=`"D365SupportAssistant.exe`" version=`"$version`" language=`"neutral`" processorArchitecture=`"amd64`"/>`r`n"
+          $depXml += '    </dependentAssembly>' + "`r`n"
+          $depXml += '  </dependency>' + "`r`n"
+          $depXml += '</asmv1:assembly>'
+          [System.IO.File]::WriteAllText("$pagesDir\D365SupportAssistant.application", $depXml, [System.Text.Encoding]::UTF8)
+          Write-Host "✓ Deployment manifest gerado manualmente"
+
+
 
           # Renomeia arquivos para .deploy (padrão ClickOnce)
           Get-ChildItem -Recurse $appDir |
