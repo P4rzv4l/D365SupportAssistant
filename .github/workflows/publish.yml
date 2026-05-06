@@ -173,18 +173,45 @@ jobs:
 
           # Remove qualquer variação do atributo (com ou sem namespace prefix)
           $patched = $rawXml
-          $patched = $patched -replace '[a-zA-Z0-9:]*customHostSpecified\s*=\s*"[^"]*"', ''
-          $patched = $patched -replace '[a-zA-Z0-9:]*hostInBrowser\s*=\s*"[^"]*"', ''
+          $patched = $patched -replace '<[^>]*customHostSpecified[^>]*/>', ''
+          $patched = $patched -replace '<[^>]*customHostSpecified[^>]*>.*?</[^>]*customHostSpecified[^>]*>', ''
+          $patched = $patched -replace '<[^>]*hostInBrowser[^>]*/>', ''
+          $patched = $patched -replace '\s*[a-zA-Z0-9:]*customHostSpecified\s*=\s*"[^"]*"', ''
           [System.IO.File]::WriteAllText($appManPath, $patched, [System.Text.Encoding]::UTF8)
           Write-Host "✓ Patch pós-assinatura aplicado"
 
           # Verifica se o atributo foi realmente removido
           $verify = [System.IO.File]::ReadAllText($appManPath)
           if ($verify -match 'customHostSpecified') {
-            Write-Error "✗ customHostSpecified ainda presente no manifest após patch!"
-            exit 1
+              Write-Host "⚠ customHostSpecified ainda presente — tentando remoção XML direta"
+              
+              # Abordagem XML para garantir remoção
+              $xmlDoc = New-Object System.Xml.XmlDocument
+              $xmlDoc.Load($appManPath)
+              
+              $ns = New-Object System.Xml.XmlNamespaceManager($xmlDoc.NameTable)
+              $ns.AddNamespace("co.v1", "urn:schemas-microsoft-com:clickonce.v1")
+              
+              $nodes = $xmlDoc.SelectNodes("//*[local-name()='customHostSpecified']")
+              foreach ($node in $nodes) { 
+                  $node.ParentNode.RemoveChild($node) | Out-Null 
+              }
+              $nodes2 = $xmlDoc.SelectNodes("//*[local-name()='hostInBrowser']")
+              foreach ($node in $nodes2) { 
+                  $node.ParentNode.RemoveChild($node) | Out-Null 
+              }
+              
+              $xmlDoc.Save($appManPath)
+              Write-Host "✓ Remoção XML aplicada"
+              
+              # Verifica novamente
+              $verify2 = [System.IO.File]::ReadAllText($appManPath)
+              if ($verify2 -match 'customHostSpecified') {
+                  Write-Error "✗ Falha ao remover customHostSpecified"
+                  exit 1
+              }
           } else {
-            Write-Host "✓ Verificado: customHostSpecified ausente no manifest final"
+              Write-Host "✓ Verificado: customHostSpecified ausente"
           }
 
           # 4. Renomeia arquivos para .deploy ANTES de gerar o deployment manifest
