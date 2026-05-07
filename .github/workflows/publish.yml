@@ -135,16 +135,38 @@ jobs:
           $workspace = "${{ github.workspace }}"
           $pagesDir  = "$workspace\pages-out"
 
-          # O MSBuild gera a estrutura ClickOnce correta em publish          # Esta pasta tem: D365SupportAssistant.application, Launcher.exe, Application Files          $publishDir = "$workspace\publish"
+          # O MSBuild gera a estrutura ClickOnce em publish-out\publish          # (porque PublishDir=publish-out\ e o ClickOnce cria subpasta publish\)
+          $publishDir = "$workspace\publish-out\publish"
           if (-not (Test-Path $publishDir)) {
-            Write-Error "✗ pasta publish nao encontrada no workspace"
-            exit 1
+            # Fallback: procura pasta que contenha Launcher.exe
+            Write-Host "publish-out\publish nao encontrado, procurando Launcher.exe..."
+            $launcher = Get-ChildItem -Recurse $workspace -Filter "Launcher.exe" `
+                          -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($launcher) {
+              $publishDir = $launcher.DirectoryName
+              Write-Host "OK encontrado em: $publishDir"
+            } else {
+              # Ultimo fallback: procura a pasta que tem D365SupportAssistant.application
+              $appf = Get-ChildItem -Recurse $workspace -Filter "D365SupportAssistant.application" `
+                        -ErrorAction SilentlyContinue |
+                      Where-Object { $_.DirectoryName -notlike "*pages-out*" } |
+                      Select-Object -First 1
+              if ($appf) {
+                $publishDir = $appf.DirectoryName
+                Write-Host "OK encontrado via .application em: $publishDir"
+              } else {
+                Write-Error "x Nao foi possivel encontrar a pasta de publish ClickOnce"
+                exit 1
+              }
+            }
           }
 
-          # Usa publish\ diretamente como pages-out
+          Write-Host "Usando publishDir: $publishDir"
+
+          # Usa publishDir diretamente como pages-out
           if (Test-Path $pagesDir) { Remove-Item -Recurse -Force $pagesDir }
           Copy-Item -Recurse -Force $publishDir $pagesDir
-          Write-Host "OK pages-out criado a partir de publish"
+          Write-Host "OK pages-out criado"
 
           # Garante nome correto do .application
           $appFile = Get-ChildItem $pagesDir -Filter "*.application" | Select-Object -First 1
@@ -158,7 +180,7 @@ jobs:
           Write-Host "OK $($appFile.Name) pronto"
 
           Write-Host "=== Conteudo final de pages-out ==="
-          Get-ChildItem $pagesDir | Select-Object Name
+          Get-ChildItem -Recurse $pagesDir | Select-Object FullName
 
       # ── Criar index.html ──────────────────────────────────────────────────
       - name: Criar index.html
