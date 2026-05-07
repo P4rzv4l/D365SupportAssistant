@@ -63,23 +63,36 @@ jobs:
       - name: Restaurar NuGet
         run: dotnet restore D365SupportAssistant.csproj
 
-      # ── Publicar via MSBuild + ClickOnceProfile ───────────────────────────
+      # ── Publicar via MSBuild ClickOnce (sem .pubxml) ─────────────────────
       - name: Publicar ClickOnce via MSBuild
         shell: pwsh
         run: |
-          $version   = "${{ steps.version.outputs.CLICKONCE_VERSION }}"
-          $publishDir = "${{ github.workspace }}\publish-out"
+          $version    = "${{ steps.version.outputs.CLICKONCE_VERSION }}"
+          $installUrl = "https://p4rzv4l.github.io/D365SupportAssistant/"
+          $appPublish = "${{ github.workspace }}\bin\Release\net8.0-windows10.0.17763.0\app.publish"
 
           Write-Host "→ MSBuild /t:Publish versão $version"
 
           msbuild D365SupportAssistant.csproj `
             /t:Publish `
             /p:Configuration=Release `
-            /p:PublishProfile=Properties/PublishProfiles/ClickOnceProfile.pubxml `
+            /p:RuntimeIdentifier=win-x64 `
+            /p:Platform="Any CPU" `
+            /p:PublishProtocol=ClickOnce `
             /p:ApplicationVersion=$version `
-            /p:PublishDir="$publishDir\" `
-            /p:InstallUrl="https://p4rzv4l.github.io/D365SupportAssistant/" `
-            /p:UpdateUrl="https://p4rzv4l.github.io/D365SupportAssistant/" `
+            /p:InstallUrl=$installUrl `
+            /p:UpdateUrl=$installUrl `
+            /p:UpdateEnabled=true `
+            /p:UpdateMode=Foreground `
+            /p:Install=true `
+            /p:IsWebBootstrapper=true `
+            /p:MapFileExtensions=true `
+            /p:SignManifests=true `
+            /p:ManifestKeyFile=D365SupportAssistant_TemporaryKey.pfx `
+            /p:GenerateManifests=true `
+            /p:BootstrapperEnabled=false `
+            /p:SelfContained=false `
+            /p:PublishSingleFile=false `
             /nologo `
             /v:m
 
@@ -89,20 +102,10 @@ jobs:
           }
           Write-Host "✓ MSBuild concluído"
 
-          # Diagnóstico: mostra onde o MSBuild publicou os arquivos
-          Write-Host "=== Conteúdo de publish-out ==="
-          if (Test-Path $publishDir) {
-            Get-ChildItem -Recurse $publishDir | Select-Object FullName
-          } else {
-            Write-Host "(publish-out não existe)"
-          }
-
-          # Procura o .application em qualquer lugar no workspace
+          # Procura o .application gerado
           Write-Host "=== Procurando .application no workspace ==="
           Get-ChildItem -Recurse "${{ github.workspace }}" -Filter "*.application" -ErrorAction SilentlyContinue |
             Select-Object FullName
-
-          # Mostra o caminho real de publish do ClickOnce no csproj
           Write-Host "=== Procurando pasta app.publish ==="
           Get-ChildItem -Recurse "${{ github.workspace }}" -Filter "app.publish" -ErrorAction SilentlyContinue |
             Select-Object FullName
@@ -111,26 +114,25 @@ jobs:
       - name: Montar pages-out
         shell: pwsh
         run: |
-          $version    = "${{ steps.version.outputs.CLICKONCE_VERSION }}"
-          $publishDir = "${{ github.workspace }}\publish-out"
-          $pagesDir   = "${{ github.workspace }}\pages-out"
-
+          $pagesDir = "${{ github.workspace }}\pages-out"
           New-Item -ItemType Directory -Force -Path $pagesDir | Out-Null
 
-          # Copia tudo do publish-out para pages-out
-          Copy-Item -Recurse -Force "$publishDir\*" "$pagesDir\"
+          # Procura o .application em qualquer lugar no workspace
+          $appFile = Get-ChildItem -Recurse "${{ github.workspace }}" -Filter "*.application" `
+                       -ErrorAction SilentlyContinue | Select-Object -First 1
 
-          # Procura o .application gerado
-          $appFile = Get-ChildItem -Recurse $pagesDir -Filter "*.application" | Select-Object -First 1
           if (-not $appFile) {
-            Write-Error "✗ .application não encontrado em $pagesDir"
-            Get-ChildItem -Recurse $pagesDir | Select-Object FullName
+            Write-Error "✗ .application não encontrado no workspace"
             exit 1
           }
-          Write-Host "✓ $($appFile.Name) encontrado"
+          Write-Host "✓ .application encontrado em: $($appFile.DirectoryName)"
 
-          # Copia .application para raiz do pages-out (para URL limpa)
-          if ($appFile.DirectoryName -ne $pagesDir) {
+          # Copia toda a pasta app.publish para pages-out
+          $sourceDir = $appFile.DirectoryName
+          Copy-Item -Recurse -Force "$sourceDir\*" "$pagesDir\"
+
+          # Garante que o .application está na raiz com o nome correto
+          if ($appFile.Name -ne "D365SupportAssistant.application") {
             Copy-Item $appFile.FullName "$pagesDir\D365SupportAssistant.application" -Force
           }
 
