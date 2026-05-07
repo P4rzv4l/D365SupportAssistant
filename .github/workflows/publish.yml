@@ -266,7 +266,6 @@ jobs:
           [System.IO.File]::WriteAllText("$dest\index.html", $html, [System.Text.Encoding]::UTF8)
           Write-Host "✓ index.html criado"
 
-      # ── Upload GitHub Pages ───────────────────────────────────────────────
       - name: Upload para GitHub Pages
         uses: actions/upload-pages-artifact@v3
         with:
