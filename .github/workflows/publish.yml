@@ -1,6 +1,6 @@
 # =============================================================================
 #  .github/workflows/publish.yml
-#  Estratégia: dotnet publish normal → gera manifests ClickOnce separadamente
+#  Estratégia: MSBuild /t:Publish com ClickOnceProfile.pubxml
 # =============================================================================
 
 name: Publicar D365 Support Assistant
@@ -61,212 +61,66 @@ jobs:
 
       # ── NuGet ─────────────────────────────────────────────────────────────
       - name: Restaurar NuGet
-        run: dotnet restore D365SupportAssistant.csproj -r win-x64
+        run: dotnet restore D365SupportAssistant.csproj
 
-      # ── PASSO 1: dotnet publish normal (gera os binários) ─────────────────
-      - name: Build e Publish binários
+      # ── Publicar via MSBuild + ClickOnceProfile ───────────────────────────
+      - name: Publicar ClickOnce via MSBuild
         shell: pwsh
         run: |
-          $workspace  = "${{ github.workspace }}"
-          $binDir     = "$workspace\bin-out"
-          Write-Host "→ dotnet publish → $binDir"
-          dotnet publish D365SupportAssistant.csproj `
-            --configuration Release `
-            --runtime win-x64 `
-            --self-contained false `
-            --output "$binDir" `
-            --nologo
+          $version   = "${{ steps.version.outputs.CLICKONCE_VERSION }}"
+          $publishDir = "${{ github.workspace }}\publish-out"
+
+          Write-Host "→ MSBuild /t:Publish versão $version"
+
+          msbuild D365SupportAssistant.csproj `
+            /t:Publish `
+            /p:Configuration=Release `
+            /p:PublishProfile=Properties/PublishProfiles/ClickOnceProfile.pubxml `
+            /p:ApplicationVersion=$version `
+            /p:PublishDir="$publishDir\" `
+            /p:InstallUrl="https://p4rzv4l.github.io/D365SupportAssistant/" `
+            /p:UpdateUrl="https://p4rzv4l.github.io/D365SupportAssistant/" `
+            /nologo `
+            /v:m
+
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "✗ dotnet publish falhou"
+            Write-Error "✗ MSBuild falhou"
             exit 1
           }
-          Write-Host "✓ Binários gerados em $binDir"
-          Get-ChildItem $binDir | Select-Object Name | Format-Table -AutoSize
+          Write-Host "✓ Publicado em $publishDir"
+          Get-ChildItem -Recurse $publishDir | Select-Object FullName | Format-Table -AutoSize
 
-      # ── PASSO 2: Gerar certificado auto-assinado ──────────────────────────
-      - name: Gerar certificado auto-assinado para ClickOnce
-        id: cert
+      # ── Montar pages-out ──────────────────────────────────────────────────
+      - name: Montar pages-out
         shell: pwsh
         run: |
-          $certPath = "${{ github.workspace }}\clickonce.pfx"
-          $pwd      = ConvertTo-SecureString "ClickOnce123!" -AsPlainText -Force
-
-          # Gera certificado auto-assinado válido por 10 anos
-          $cert = New-SelfSignedCertificate `
-            -Subject "CN=D365SupportAssistant" `
-            -CertStoreLocation "Cert:\CurrentUser\My" `
-            -KeyExportPolicy Exportable `
-            -KeySpec Signature `
-            -KeyAlgorithm RSA `
-            -KeyLength 2048 `
-            -HashAlgorithm SHA256 `
-            -NotAfter (Get-Date).AddYears(10) `
-            -Type CodeSigningCert
-
-          Export-PfxCertificate -Cert $cert -FilePath $certPath -Password $pwd | Out-Null
-          Write-Host "✓ Certificado gerado: $certPath"
-          Write-Host "  Thumbprint: $($cert.Thumbprint)"
-          echo "CERT_PATH=$certPath"       >> $env:GITHUB_OUTPUT
-          echo "CERT_THUMB=$($cert.Thumbprint)" >> $env:GITHUB_OUTPUT
-
-      # ── PASSO 3: Gerar manifests ClickOnce e assinar ──────────────────────
-      - name: Gerar e assinar manifests ClickOnce
-        shell: pwsh
-        run: |
-          $workspace  = "${{ github.workspace }}"
           $version    = "${{ steps.version.outputs.CLICKONCE_VERSION }}"
-          $installUrl = "https://p4rzv4l.github.io/D365SupportAssistant/"
-          $binDir     = "$workspace\bin-out"
-          $appDir     = "$workspace\pages-out\Application Files\D365SupportAssistant_$($version.Replace('.','_'))"
-          $pagesDir   = "$workspace\pages-out"
-          $certPath   = "${{ steps.cert.outputs.CERT_PATH }}"
-          $certPwd    = "ClickOnce123!"
+          $publishDir = "${{ github.workspace }}\publish-out"
+          $pagesDir   = "${{ github.workspace }}\pages-out"
 
-          New-Item -ItemType Directory -Force -Path $appDir  | Out-Null
           New-Item -ItemType Directory -Force -Path $pagesDir | Out-Null
 
-          # Localizar mage.exe
-          $mage = Get-ChildItem -Recurse "C:\Program Files\Microsoft Visual Studio\2022" `
-                    -Filter "mage.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $mage) {
-            $mage = Get-ChildItem -Recurse "C:\Program Files (x86)\Microsoft SDKs" `
-                      -Filter "mage.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          # Copia tudo do publish-out para pages-out
+          Copy-Item -Recurse -Force "$publishDir\*" "$pagesDir\"
+
+          # Procura o .application gerado
+          $appFile = Get-ChildItem -Recurse $pagesDir -Filter "*.application" | Select-Object -First 1
+          if (-not $appFile) {
+            Write-Error "✗ .application não encontrado em $pagesDir"
+            Get-ChildItem -Recurse $pagesDir | Select-Object FullName
+            exit 1
           }
-          if (-not $mage) { Write-Error "✗ mage.exe não encontrado"; exit 1 }
-          $mageExe = $mage.FullName
-          Write-Host "✓ mage.exe: $mageExe"
+          Write-Host "✓ $($appFile.Name) encontrado"
 
-          # Copia binários para a pasta de versão do ClickOnce
-          Copy-Item -Recurse -Force "$binDir\*" "$appDir\"
-          Write-Host "✓ Binários copiados para $appDir"
+          # Copia .application para raiz do pages-out (para URL limpa)
+          if ($appFile.DirectoryName -ne $pagesDir) {
+            Copy-Item $appFile.FullName "$pagesDir\D365SupportAssistant.application" -Force
+          }
 
-          # 1. Gera o application manifest via mage
-          & $mageExe -New Application `
-            -ToFile "$appDir\D365SupportAssistant.exe.manifest" `
-            -Name "D365 Support Assistant" `
-            -Version $version `
-            -FromDirectory "$appDir" `
-            -TrustLevel FullTrust
-          Write-Host "✓ Application manifest gerado"
-
-          $appManPath = "$appDir\D365SupportAssistant.exe.manifest"
-
-          # ── Descobre o nome real do assembly lendo a DLL gerenciada ──────────
-          $asmName = [System.Reflection.AssemblyName]::GetAssemblyName("$appDir\D365SupportAssistant.dll").Name
-          Write-Host "✓ Nome real do assembly: $asmName"
-
-          # ── Extrai publicKeyToken do certificado PFX ───────────────────────
-          $pfxCert     = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certPath, $certPwd)
-          $pubKeyBytes = $pfxCert.PublicKey.EncodedKeyValue.RawData
-          $sha1Hash    = [System.Security.Cryptography.SHA1]::Create().ComputeHash($pubKeyBytes)
-          # publicKeyToken = últimos 8 bytes do SHA1 da chave pública, ordem invertida
-          $pkt = (($sha1Hash[($sha1Hash.Length-8)..($sha1Hash.Length-1)] | ForEach-Object { $_.ToString('x2') }) -join '')
-          Write-Host "✓ publicKeyToken: $pkt"
-
-          # ── Reconstrói o manifest do zero com dados corretos ───────────────
-          # Coleta todos os arquivos e seus hashes para a seção <file>
-          $fileSection = ''
-          Get-ChildItem -Recurse $appDir -File |
-            Where-Object { $_.Extension -ne '.manifest' } |
-            ForEach-Object {
-              $rel  = $_.FullName.Substring($appDir.Length + 1).Replace('\','/')
-              $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
-              $b64  = [Convert]::ToBase64String(
-                        [byte[]]($hash -split '(?<=\G..)' | Where-Object {$_} | ForEach-Object {[Convert]::ToByte($_, 16)})
-                      )
-              $sz   = $_.Length
-              $fileSection += "  <file name=`"$rel.deploy`" size=`"$sz`">`r`n"
-              $fileSection += "    <hash>`r`n"
-              $fileSection += "      <dsig:Transforms xmlns:dsig=`"http://www.w3.org/2000/09/xmldsig#`"><dsig:Transform Algorithm=`"urn:schemas-microsoft-com:HashTransforms.Identity`"/></dsig:Transforms>`r`n"
-              $fileSection += "      <dsig:DigestMethod xmlns:dsig=`"http://www.w3.org/2000/09/xmldsig#`" Algorithm=`"http://www.w3.org/2000/09/xmldsig#sha256`"/>`r`n"
-              $fileSection += "      <dsig:DigestValue xmlns:dsig=`"http://www.w3.org/2000/09/xmldsig#`">$b64</dsig:DigestValue>`r`n"
-              $fileSection += "    </hash>`r`n"
-              $fileSection += "  </file>`r`n"
-            }
-
-          $newManifest  = '<?xml version="1.0" encoding="utf-8"?>' + "`r`n"
-          $newManifest += '<asmv1:assembly manifestVersion="1.0"' + "`r`n"
-          $newManifest += '  xmlns:asmv1="urn:schemas-microsoft-com:asm.v1"' + "`r`n"
-          $newManifest += '  xmlns="urn:schemas-microsoft-com:asm.v2"' + "`r`n"
-          $newManifest += '  xmlns:asmv2="urn:schemas-microsoft-com:asm.v2"' + "`r`n"
-          $newManifest += '  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' + "`r`n"
-          $newManifest += "  <assemblyIdentity name=`"$asmName`" version=`"$version`" publicKeyToken=`"$pkt`" language=`"neutral`" processorArchitecture=`"msil`" type=`"win32`" xmlns=`"urn:schemas-microsoft-com:asm.v1`"/>`r`n"
-          $newManifest += '  <application/>' + "`r`n"
-          $newManifest += '  <entryPoint>' + "`r`n"
-          $newManifest += "    <assemblyIdentity name=`"$asmName`" version=`"$version`" language=`"neutral`" processorArchitecture=`"msil`"/>`r`n"
-          $newManifest += "    <commandLine file=`"D365SupportAssistant.exe`" parameters=`"`"/>`r`n"
-          $newManifest += '  </entryPoint>' + "`r`n"
-          $newManifest += '  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">' + "`r`n"
-          $newManifest += '    <security><applicationRequestMinimum>' + "`r`n"
-          $newManifest += '      <PermissionSet Unrestricted="true" ID="Custom" SameSite="site"/>' + "`r`n"
-          $newManifest += '      <defaultAssemblyRequest permissionSetReference="Custom"/>' + "`r`n"
-          $newManifest += '    </applicationRequestMinimum></security>' + "`r`n"
-          $newManifest += '  </trustInfo>' + "`r`n"
-          $newManifest += $fileSection
-          $newManifest += '</asmv1:assembly>'
-          [System.IO.File]::WriteAllText($appManPath, $newManifest, [System.Text.Encoding]::UTF8)
-          Write-Host "✓ Application manifest reconstruído do zero"
-
-          # ── Assina o manifest reconstruído ─────────────────────────────────
-          & $mageExe -Sign "$appManPath" -CertFile "$certPath" -Password "$certPwd"
-          Write-Host "✓ Application manifest assinado"
-
-          # ── Renomeia arquivos para .deploy ─────────────────────────────────
-          Get-ChildItem -Recurse $appDir |
-            Where-Object { -not $_.PSIsContainer -and $_.Extension -ne ".manifest" } |
-            ForEach-Object { Rename-Item -Path $_.FullName -NewName ($_.FullName + ".deploy") }
-          Write-Host "✓ Arquivos renomeados para .deploy"
-
-          # ── Gera deployment manifest ───────────────────────────────────────
-          & $mageExe -New Deployment `
-            -ToFile "$pagesDir\D365SupportAssistant.application" `
-            -Name "D365 Support Assistant" `
-            -Version $version `
-            -AppManifest "$appManPath" `
-            -ProviderUrl "${installUrl}D365SupportAssistant.application" `
-            -Install true `
-            -Publisher "p4rzv4l" `
-            -SupportUrl $installUrl
-          Write-Host "✓ Deployment manifest gerado"
-
-          # ── Corrige processorArchitecture no .application: msil → amd64 ──
-          $depManPath = "$pagesDir\D365SupportAssistant.application"
-          $depXml = [System.IO.File]::ReadAllText($depManPath)
-          # O mage gera processorArchitecture="msil" na assemblyIdentity raiz do .application
-          # mas o .exe.manifest usa amd64 — precisam ser iguais
-          $depXml = $depXml -replace '(<assemblyIdentity[^>]*processorArchitecture=)"msil"', '$1"amd64"'
-          [System.IO.File]::WriteAllText($depManPath, $depXml, [System.Text.Encoding]::UTF8)
-          Write-Host "✓ processorArchitecture corrigido: msil → amd64 no .application"
-
-          # ── Assina o deployment manifest ───────────────────────────────────
-          & $mageExe -Sign "$pagesDir\D365SupportAssistant.application" `
-            -CertFile "$certPath" -Password "$certPwd"
-          Write-Host "✓ Deployment manifest assinado"
-
-          # ── Diagnóstico: dumpa o .application gerado ──────────────────────
-          Write-Host "=== CONTEÚDO DO .application ==="
-          [System.IO.File]::ReadAllText("$pagesDir\D365SupportAssistant.application") -split "`n" |
-            ForEach-Object { Write-Host $_ }
-          Write-Host "=== FIM .application ==="
-
-          # Lista resultado final
-          Write-Host ""
           Write-Host "=== Conteúdo final de pages-out ==="
           Get-ChildItem -Recurse $pagesDir | Select-Object FullName
 
-      # ── PASSO 4: Verificar que o .application foi gerado ──────────────────
-      - name: Verificar .application
-        shell: pwsh
-        run: |
-          $pagesDir = "${{ github.workspace }}\pages-out"
-          $appFile  = Get-ChildItem $pagesDir -Filter "*.application" -ErrorAction SilentlyContinue
-          if (-not $appFile) {
-            Write-Error "✗ .application não encontrado em $pagesDir"
-            exit 1
-          }
-          Write-Host "✓ $($appFile.Name) encontrado — OK"
-
-      # ── PASSO 5: Criar index.html ──────────────────────────────────────────
+      # ── Criar index.html ──────────────────────────────────────────────────
       - name: Criar index.html
         shell: pwsh
         run: |
