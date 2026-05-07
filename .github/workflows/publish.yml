@@ -134,94 +134,31 @@ jobs:
         run: |
           $workspace = "${{ github.workspace }}"
           $pagesDir  = "$workspace\pages-out"
-          New-Item -ItemType Directory -Force -Path $pagesDir | Out-Null
 
-          # Procura o .application em qualquer lugar no workspace
-          $appFile = Get-ChildItem -Recurse $workspace -Filter "*.application" `
-                       -ErrorAction SilentlyContinue | Select-Object -First 1
-
-          if (-not $appFile) {
-            Write-Error "✗ .application não encontrado no workspace"
+          # O MSBuild gera a estrutura ClickOnce correta em publish          # Esta pasta tem: D365SupportAssistant.application, Launcher.exe, Application Files          $publishDir = "$workspace\publish"
+          if (-not (Test-Path $publishDir)) {
+            Write-Error "✗ pasta publish nao encontrada no workspace"
             exit 1
           }
-          Write-Host "✓ .application encontrado em: $($appFile.DirectoryName)"
 
-          # Copia toda a pasta app.publish para pages-out
-          $sourceDir = $appFile.DirectoryName
-          Copy-Item -Recurse -Force "$sourceDir\*" "$pagesDir\"
+          # Usa publish\ diretamente como pages-out
+          if (Test-Path $pagesDir) { Remove-Item -Recurse -Force $pagesDir }
+          Copy-Item -Recurse -Force $publishDir $pagesDir
+          Write-Host "OK pages-out criado a partir de publish"
 
-          # Garante que o .application está na raiz com o nome correto
+          # Garante nome correto do .application
+          $appFile = Get-ChildItem $pagesDir -Filter "*.application" | Select-Object -First 1
+          if (-not $appFile) {
+            Write-Error "x .application nao encontrado em pages-out"
+            exit 1
+          }
           if ($appFile.Name -ne "D365SupportAssistant.application") {
-            Copy-Item $appFile.FullName "$pagesDir\D365SupportAssistant.application" -Force
+            Rename-Item $appFile.FullName "D365SupportAssistant.application"
           }
+          Write-Host "OK $($appFile.Name) pronto"
 
-          # ── Copia DLLs do build output para pages-out com extensão .deploy ──
-          # O manifest referencia os arquivos na raiz da URL sem subpasta
-          # O MSBuild publica as DLLs em bin\ mas não em app.publish
-          $buildOut = "${{ github.workspace }}\bin\Any CPU\Release\net8.0-windows10.0.17763.0\win-x64"
-          if (-not (Test-Path $buildOut)) {
-            # Fallback: procura qualquer pasta win-x64 com DLLs
-            $buildOut = Get-ChildItem -Recurse "${{ github.workspace }}\bin" -Filter "D365SupportAssistant.dll" `
-                          -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty DirectoryName
-          }
-          if ($buildOut -and (Test-Path $buildOut)) {
-            Write-Host "✓ Copiando DLLs de: $buildOut"
-            Get-ChildItem $buildOut -File | ForEach-Object {
-              $dest = Join-Path $pagesDir ($_.Name + ".deploy")
-              if (-not (Test-Path $dest)) {
-                Copy-Item $_.FullName $dest -Force
-                Write-Host "  + $($_.Name).deploy"
-              }
-            }
-            # Copia também arquivos da pasta app.publish se existir
-            $appPublishDir = Join-Path $buildOut "app.publish"
-            if (Test-Path $appPublishDir) {
-              Get-ChildItem $appPublishDir -File | ForEach-Object {
-                $dest = Join-Path $pagesDir ($_.Name + ".deploy")
-                if (-not (Test-Path $dest)) {
-                  Copy-Item $_.FullName $dest -Force
-                  Write-Host "  + (app.publish) $($_.Name).deploy"
-                }
-              }
-            }
-          } else {
-            Write-Host "⚠ build output não encontrado"
-          }
-
-                    # ── Remove do manifest arquivos que não existem em pages-out ──────
-          # Launcher.exe é gerado pelo bootstrapper mas nunca existe como arquivo físico
-          $manifests = Get-ChildItem $pagesDir -Filter "*.manifest" -ErrorAction SilentlyContinue
-          foreach ($mf in $manifests) {
-            $xdoc = New-Object System.Xml.XmlDocument
-            $xdoc.PreserveWhitespace = $true
-            $xdoc.Load($mf.FullName)
-
-            # Coleta nós <file> cujo arquivo .deploy não existe em pages-out
-            $toRemove = @()
-            foreach ($node in $xdoc.assembly.file) {
-              if ($null -eq $node) { continue }
-              $fname = $node.GetAttribute("name")
-              $fpath = Join-Path $pagesDir $fname
-              if (-not (Test-Path $fpath)) {
-                $toRemove += $node
-                Write-Host "⚠ Removendo do manifest (404): $fname"
-              }
-            }
-            foreach ($node in $toRemove) {
-              $node.ParentNode.RemoveChild($node) | Out-Null
-            }
-            if ($toRemove.Count -gt 0) {
-              $xdoc.Save($mf.FullName)
-              Write-Host "✓ Manifest limpo: $($mf.Name)"
-            }
-          }
-
-          Write-Host "=== Conteúdo final de pages-out ==="
-          Get-ChildItem -Recurse $pagesDir | Select-Object FullName
-
-          # Verifica se os .deploy das DLLs estão na raiz
-          Write-Host "=== .deploy files na raiz ==="
-          Get-ChildItem $pagesDir -Filter "*.deploy" | Select-Object Name
+          Write-Host "=== Conteudo final de pages-out ==="
+          Get-ChildItem $pagesDir | Select-Object Name
 
       # ── Criar index.html ──────────────────────────────────────────────────
       - name: Criar index.html
