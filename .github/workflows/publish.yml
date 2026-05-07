@@ -188,16 +188,33 @@ jobs:
             Write-Host "⚠ build output não encontrado"
           }
 
-                    # ── Remove Launcher.exe do manifest (não é necessário para web deploy) ──
+                    # ── Copia Launcher.exe e qualquer outro arquivo listado no manifest ──
+          # Procura todos os arquivos que o manifest referencia mas que não existem em pages-out
           $manifests = Get-ChildItem $pagesDir -Filter "*.manifest" -ErrorAction SilentlyContinue
           foreach ($mf in $manifests) {
-            $txt = [System.IO.File]::ReadAllText($mf.FullName)
-            if ($txt -match 'Launcher') {
-              # Remove a tag <file> inteira que referencia o Launcher.exe
-              $txt = $txt -replace '(?s)<file[^>]*name="Launcher\.exe[^"]*"[^>]*/>', ''
-              $txt = $txt -replace '(?s)<file[^>]*name="Launcher\.exe[^"]*">.*?</file>', ''
-              [System.IO.File]::WriteAllText($mf.FullName, $txt, [System.Text.Encoding]::UTF8)
-              Write-Host "✓ Launcher.exe removido de $($mf.Name)"
+            [xml]$doc = Get-Content $mf.FullName -ErrorAction SilentlyContinue
+            if (-not $doc) { continue }
+            $doc.assembly.file | Where-Object { $_ -ne $null } | ForEach-Object {
+              $fileName = $_.name
+              # Remove .deploy suffix para encontrar o arquivo real
+              $realName = $fileName -replace '\.deploy$', ''
+              $destPath = Join-Path $pagesDir $fileName
+              if (-not (Test-Path $destPath)) {
+                # Procura o arquivo no workspace
+                $found = Get-ChildItem -Recurse "${{ github.workspace }}" `
+                           -Filter (Split-Path $realName -Leaf) `
+                           -ErrorAction SilentlyContinue |
+                         Where-Object { $_.FullName -notlike '*\pages-out\*' } |
+                         Select-Object -First 1
+                if ($found) {
+                  $destDir = Split-Path $destPath
+                  New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+                  Copy-Item $found.FullName $destPath -Force
+                  Write-Host "✓ Copiado: $fileName"
+                } else {
+                  Write-Host "⚠ Não encontrado: $realName"
+                }
+              }
             }
           }
 
