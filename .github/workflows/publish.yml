@@ -188,33 +188,31 @@ jobs:
             Write-Host "⚠ build output não encontrado"
           }
 
-                    # ── Copia Launcher.exe e qualquer outro arquivo listado no manifest ──
-          # Procura todos os arquivos que o manifest referencia mas que não existem em pages-out
+                    # ── Remove do manifest arquivos que não existem em pages-out ──────
+          # Launcher.exe é gerado pelo bootstrapper mas nunca existe como arquivo físico
           $manifests = Get-ChildItem $pagesDir -Filter "*.manifest" -ErrorAction SilentlyContinue
           foreach ($mf in $manifests) {
-            [xml]$doc = Get-Content $mf.FullName -ErrorAction SilentlyContinue
-            if (-not $doc) { continue }
-            $doc.assembly.file | Where-Object { $_ -ne $null } | ForEach-Object {
-              $fileName = $_.name
-              # Remove .deploy suffix para encontrar o arquivo real
-              $realName = $fileName -replace '\.deploy$', ''
-              $destPath = Join-Path $pagesDir $fileName
-              if (-not (Test-Path $destPath)) {
-                # Procura o arquivo no workspace
-                $found = Get-ChildItem -Recurse "${{ github.workspace }}" `
-                           -Filter (Split-Path $realName -Leaf) `
-                           -ErrorAction SilentlyContinue |
-                         Where-Object { $_.FullName -notlike '*\pages-out\*' } |
-                         Select-Object -First 1
-                if ($found) {
-                  $destDir = Split-Path $destPath
-                  New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-                  Copy-Item $found.FullName $destPath -Force
-                  Write-Host "✓ Copiado: $fileName"
-                } else {
-                  Write-Host "⚠ Não encontrado: $realName"
-                }
+            $xdoc = New-Object System.Xml.XmlDocument
+            $xdoc.PreserveWhitespace = $true
+            $xdoc.Load($mf.FullName)
+
+            # Coleta nós <file> cujo arquivo .deploy não existe em pages-out
+            $toRemove = @()
+            foreach ($node in $xdoc.assembly.file) {
+              if ($null -eq $node) { continue }
+              $fname = $node.GetAttribute("name")
+              $fpath = Join-Path $pagesDir $fname
+              if (-not (Test-Path $fpath)) {
+                $toRemove += $node
+                Write-Host "⚠ Removendo do manifest (404): $fname"
               }
+            }
+            foreach ($node in $toRemove) {
+              $node.ParentNode.RemoveChild($node) | Out-Null
+            }
+            if ($toRemove.Count -gt 0) {
+              $xdoc.Save($mf.FullName)
+              Write-Host "✓ Manifest limpo: $($mf.Name)"
             }
           }
 
