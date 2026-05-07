@@ -190,10 +190,10 @@ jobs:
           $newManifest += '  xmlns="urn:schemas-microsoft-com:asm.v2"' + "`r`n"
           $newManifest += '  xmlns:asmv2="urn:schemas-microsoft-com:asm.v2"' + "`r`n"
           $newManifest += '  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' + "`r`n"
-          $newManifest += "  <assemblyIdentity name=`"$asmName`" version=`"$version`" publicKeyToken=`"$pkt`" language=`"neutral`" processorArchitecture=`"amd64`" type=`"win32`" xmlns=`"urn:schemas-microsoft-com:asm.v1`"/>`r`n"
+          $newManifest += "  <assemblyIdentity name=`"$asmName`" version=`"$version`" publicKeyToken=`"$pkt`" language=`"neutral`" processorArchitecture=`"msil`" type=`"win32`" xmlns=`"urn:schemas-microsoft-com:asm.v1`"/>`r`n"
           $newManifest += '  <application/>' + "`r`n"
           $newManifest += '  <entryPoint>' + "`r`n"
-          $newManifest += "    <assemblyIdentity name=`"$asmName`" version=`"$version`" language=`"neutral`" processorArchitecture=`"amd64`"/>`r`n"
+          $newManifest += "    <assemblyIdentity name=`"$asmName`" version=`"$version`" language=`"neutral`" processorArchitecture=`"msil`"/>`r`n"
           $newManifest += "    <commandLine file=`"D365SupportAssistant.exe`" parameters=`"`"/>`r`n"
           $newManifest += '  </entryPoint>' + "`r`n"
           $newManifest += '  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">' + "`r`n"
@@ -228,6 +228,15 @@ jobs:
             -Publisher "p4rzv4l" `
             -SupportUrl $installUrl
           Write-Host "✓ Deployment manifest gerado"
+
+          # ── Corrige processorArchitecture no .application: msil → amd64 ──
+          $depManPath = "$pagesDir\D365SupportAssistant.application"
+          $depXml = [System.IO.File]::ReadAllText($depManPath)
+          # O mage gera processorArchitecture="msil" na assemblyIdentity raiz do .application
+          # mas o .exe.manifest usa amd64 — precisam ser iguais
+          $depXml = $depXml -replace '(<assemblyIdentity[^>]*processorArchitecture=)"msil"', '$1"amd64"'
+          [System.IO.File]::WriteAllText($depManPath, $depXml, [System.Text.Encoding]::UTF8)
+          Write-Host "✓ processorArchitecture corrigido: msil → amd64 no .application"
 
           # ── Assina o deployment manifest ───────────────────────────────────
           & $mageExe -Sign "$pagesDir\D365SupportAssistant.application" `
