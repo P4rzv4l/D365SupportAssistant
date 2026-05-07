@@ -154,59 +154,29 @@ jobs:
             Copy-Item $appFile.FullName "$pagesDir\D365SupportAssistant.application" -Force
           }
 
-          # ── Copia todos os arquivos referenciados pelo manifest mas ausentes ──
-          # O manifest pode referenciar arquivos em caminhos relativos que não existem
-          # em pages-out. Lê o manifest e copia cada arquivo faltante do workspace.
-          $manifestPath = "$pagesDir\D365SupportAssistant.dll.manifest"
-          if (-not (Test-Path $manifestPath)) {
-            $manifestPath = Get-ChildItem $pagesDir -Filter "*.manifest" |
-                              Where-Object { $_.Name -ne "D365SupportAssistant.application" } |
-                              Select-Object -First 1 -ExpandProperty FullName
+          # ── Copia DLLs do build output para pages-out com extensão .deploy ──
+          # O manifest referencia os arquivos na raiz da URL sem subpasta
+          # O MSBuild publica as DLLs em bin\ mas não em app.publish
+          $buildOut = "${{ github.workspace }}\bin\Any CPU\Release\net8.0-windows10.0.17763.0\win-x64"
+          if (-not (Test-Path $buildOut)) {
+            # Fallback: procura qualquer pasta win-x64 com DLLs
+            $buildOut = Get-ChildItem -Recurse "${{ github.workspace }}\bin" -Filter "D365SupportAssistant.dll" `
+                          -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty DirectoryName
           }
-
-          if ($manifestPath -and (Test-Path $manifestPath)) {
-            Write-Host "✓ Lendo manifest: $manifestPath"
-            [xml]$man = Get-Content $manifestPath
-            $ns = @{ a = "urn:schemas-microsoft-com:asm.v2" }
-
-            # Coleta todos os nomes de arquivo referenciados
-            $refs = @()
-            $man.assembly.file | ForEach-Object { if ($_) { $refs += $_.name } }
-
-            foreach ($ref in $refs) {
-              $destPath = Join-Path $pagesDir $ref
-              if (-not (Test-Path $destPath)) {
-                # Procura o arquivo no workspace (sem .deploy)
-                $baseName = $ref -replace '\.deploy$', ''
-                $found = Get-ChildItem -Recurse $workspace -Filter (Split-Path $baseName -Leaf) `
-                           -ErrorAction SilentlyContinue |
-                         Where-Object { $_.FullName -notlike '*\pages-out\*' } |
-                         Select-Object -First 1
-                if ($found) {
-                  New-Item -ItemType Directory -Force -Path (Split-Path $destPath) | Out-Null
-                  Copy-Item $found.FullName $destPath -Force
-                  Write-Host "✓ Copiado: $ref"
-                } else {
-                  Write-Host "⚠ Não encontrado: $ref"
-                }
+          if ($buildOut -and (Test-Path $buildOut)) {
+            Write-Host "✓ Copiando DLLs de: $buildOut"
+            Get-ChildItem $buildOut -File | ForEach-Object {
+              $dest = Join-Path $pagesDir ($_.Name + ".deploy")
+              if (-not (Test-Path $dest)) {
+                Copy-Item $_.FullName $dest -Force
+                Write-Host "  + $($_.Name).deploy"
               }
             }
+          } else {
+            Write-Host "⚠ build output não encontrado"
           }
 
-          # ── Copia ícones mantendo estrutura de pastas ──────────────────────
-          $assets = Get-ChildItem -Recurse $workspace -Filter "*.ico" -ErrorAction SilentlyContinue |
-                      Where-Object { $_.FullName -notlike '*\obj\*' -and
-                                     $_.FullName -notlike '*\bin\*' -and
-                                     $_.FullName -notlike '*\pages-out\*' }
-          foreach ($asset in $assets) {
-            $rel  = $asset.FullName.Substring($workspace.Length + 1)
-            $dest = Join-Path $pagesDir ($rel + ".deploy")
-            New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
-            Copy-Item $asset.FullName $dest -Force
-            Write-Host "✓ Ícone copiado: $rel.deploy"
-          }
-
-          Write-Host "=== Conteúdo final de pages-out ==="
+                    Write-Host "=== Conteúdo final de pages-out ==="
           Get-ChildItem -Recurse $pagesDir | Select-Object FullName
 
           # Verifica se os .deploy das DLLs estão na raiz
@@ -266,6 +236,7 @@ jobs:
           [System.IO.File]::WriteAllText("$dest\index.html", $html, [System.Text.Encoding]::UTF8)
           Write-Host "✓ index.html criado"
 
+      # ── Upload GitHub Pages ───────────────────────────────────────────────
       - name: Upload para GitHub Pages
         uses: actions/upload-pages-artifact@v3
         with:
