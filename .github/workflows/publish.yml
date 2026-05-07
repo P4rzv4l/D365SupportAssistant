@@ -180,7 +180,7 @@ jobs:
                 $baseName = $ref -replace '\.deploy$', ''
                 $found = Get-ChildItem -Recurse $workspace -Filter (Split-Path $baseName -Leaf) `
                            -ErrorAction SilentlyContinue |
-                         Where-Object { $_.FullName -notmatch '[\]pages-out[\]' } |
+                         Where-Object { $_.FullName -notlike '*\pages-out\*' } |
                          Select-Object -First 1
                 if ($found) {
                   New-Item -ItemType Directory -Force -Path (Split-Path $destPath) | Out-Null
@@ -195,9 +195,9 @@ jobs:
 
           # ── Copia ícones mantendo estrutura de pastas ──────────────────────
           $assets = Get-ChildItem -Recurse $workspace -Filter "*.ico" -ErrorAction SilentlyContinue |
-                      Where-Object { $_.FullName -notmatch '[\]obj[\]' -and
-                                     $_.FullName -notmatch '[\]bin[\]' -and
-                                     $_.FullName -notmatch '[\]pages-out[\]' }
+                      Where-Object { $_.FullName -notlike '*\obj\*' -and
+                                     $_.FullName -notlike '*\bin\*' -and
+                                     $_.FullName -notlike '*\pages-out\*' }
           foreach ($asset in $assets) {
             $rel  = $asset.FullName.Substring($workspace.Length + 1)
             $dest = Join-Path $pagesDir ($rel + ".deploy")
