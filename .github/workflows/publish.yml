@@ -108,6 +108,7 @@ jobs:
             /p:ManifestCertificateThumbprint="${{ steps.cert.outputs.CERT_THUMB }}" `
             /p:GenerateManifests=true `
             /p:BootstrapperEnabled=false `
+            /p:ApplicationIcon= `
             /p:SelfContained=false `
             /p:PublishSingleFile=false `
             /nologo `

@@ -358,7 +358,7 @@ public partial class DashboardView : Page
         Grid.SetColumn(actPanel, 2);
         grid.Children.Add(actPanel);
 
-        var btnTimer = MakeActionBtn("▶  Timer",
+        var btnTimer = MakeActionBtn("Timer ▶",
             fg: "#86EFAC", bg: Color.FromArgb(0x1E, 0x22, 0xC5, 0x5E),
             border: Color.FromArgb(0x44, 0x22, 0xC5, 0x5E));
         btnTimer.Click += (_, _) => _mainWindow.QuickStartTimer(snap.TicketNumber, snap.Title);
@@ -443,7 +443,7 @@ public partial class DashboardView : Page
     {
         var menu = new ContextMenu();
 
-        var itemTimer = new MenuItem { Header = $"▶ Timer — {snap.TicketNumber}" };
+        var itemTimer = new MenuItem { Header = $"Timer ▶ — {snap.TicketNumber}" };
         itemTimer.Click += (_, _) => _mainWindow.QuickStartTimer(snap.TicketNumber, snap.Title);
         menu.Items.Add(itemTimer);
 
