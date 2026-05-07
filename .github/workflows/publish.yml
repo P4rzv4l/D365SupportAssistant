@@ -102,7 +102,7 @@ jobs:
             /p:UpdateEnabled=true `
             /p:UpdateMode=Foreground `
             /p:Install=true `
-            /p:IsWebBootstrapper=true `
+            /p:IsWebBootstrapper=false `
             /p:MapFileExtensions=true `
             /p:SignManifests=true `
             /p:ManifestCertificateThumbprint="${{ steps.cert.outputs.CERT_THUMB }}" `
@@ -173,11 +173,35 @@ jobs:
                 Write-Host "  + $($_.Name).deploy"
               }
             }
+            # Copia também arquivos da pasta app.publish se existir
+            $appPublishDir = Join-Path $buildOut "app.publish"
+            if (Test-Path $appPublishDir) {
+              Get-ChildItem $appPublishDir -File | ForEach-Object {
+                $dest = Join-Path $pagesDir ($_.Name + ".deploy")
+                if (-not (Test-Path $dest)) {
+                  Copy-Item $_.FullName $dest -Force
+                  Write-Host "  + (app.publish) $($_.Name).deploy"
+                }
+              }
+            }
           } else {
             Write-Host "⚠ build output não encontrado"
           }
 
-                    Write-Host "=== Conteúdo final de pages-out ==="
+                    # ── Remove Launcher.exe do manifest (não é necessário para web deploy) ──
+          $manifests = Get-ChildItem $pagesDir -Filter "*.manifest" -ErrorAction SilentlyContinue
+          foreach ($mf in $manifests) {
+            $txt = [System.IO.File]::ReadAllText($mf.FullName)
+            if ($txt -match 'Launcher') {
+              # Remove a tag <file> inteira que referencia o Launcher.exe
+              $txt = $txt -replace '(?s)<file[^>]*name="Launcher\.exe[^"]*"[^>]*/>', ''
+              $txt = $txt -replace '(?s)<file[^>]*name="Launcher\.exe[^"]*">.*?</file>', ''
+              [System.IO.File]::WriteAllText($mf.FullName, $txt, [System.Text.Encoding]::UTF8)
+              Write-Host "✓ Launcher.exe removido de $($mf.Name)"
+            }
+          }
+
+          Write-Host "=== Conteúdo final de pages-out ==="
           Get-ChildItem -Recurse $pagesDir | Select-Object FullName
 
           # Verifica se os .deploy das DLLs estão na raiz
