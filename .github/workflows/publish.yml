@@ -61,7 +61,7 @@ jobs:
 
       # ── NuGet ─────────────────────────────────────────────────────────────
       - name: Restaurar NuGet
-        run: dotnet restore D365SupportAssistant.csproj
+        run: dotnet restore D365SupportAssistant.csproj -r win-x64
 
       # ── Publicar via MSBuild ClickOnce (sem .pubxml) ─────────────────────
       - name: Publicar ClickOnce via MSBuild
