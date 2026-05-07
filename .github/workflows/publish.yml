@@ -154,25 +154,64 @@ jobs:
             Copy-Item $appFile.FullName "$pagesDir\D365SupportAssistant.application" -Force
           }
 
-          # ── Copia arquivos de asset que o ClickOnce referencia mas não publica ──
-          # O manifest lista App\Assets\*.ico mas o MSBuild não os copia para app.publish
-          # Precisamos copiá-los mantendo a estrutura de pastas + extensão .deploy
-          $srcRoot = $workspace
-          $assets  = Get-ChildItem -Recurse $workspace -Filter "*.ico" -ErrorAction SilentlyContinue |
-                       Where-Object { $_.FullName -notmatch '[\\]obj[\\]' -and $_.FullName -notmatch '[\\]bin[\\]' }
+          # ── Copia todos os arquivos referenciados pelo manifest mas ausentes ──
+          # O manifest pode referenciar arquivos em caminhos relativos que não existem
+          # em pages-out. Lê o manifest e copia cada arquivo faltante do workspace.
+          $manifestPath = "$pagesDir\D365SupportAssistant.dll.manifest"
+          if (-not (Test-Path $manifestPath)) {
+            $manifestPath = Get-ChildItem $pagesDir -Filter "*.manifest" |
+                              Where-Object { $_.Name -ne "D365SupportAssistant.application" } |
+                              Select-Object -First 1 -ExpandProperty FullName
+          }
 
+          if ($manifestPath -and (Test-Path $manifestPath)) {
+            Write-Host "✓ Lendo manifest: $manifestPath"
+            [xml]$man = Get-Content $manifestPath
+            $ns = @{ a = "urn:schemas-microsoft-com:asm.v2" }
+
+            # Coleta todos os nomes de arquivo referenciados
+            $refs = @()
+            $man.assembly.file | ForEach-Object { if ($_) { $refs += $_.name } }
+
+            foreach ($ref in $refs) {
+              $destPath = Join-Path $pagesDir $ref
+              if (-not (Test-Path $destPath)) {
+                # Procura o arquivo no workspace (sem .deploy)
+                $baseName = $ref -replace '\.deploy$', ''
+                $found = Get-ChildItem -Recurse $workspace -Filter (Split-Path $baseName -Leaf) `
+                           -ErrorAction SilentlyContinue |
+                         Where-Object { $_.FullName -notmatch '[\]pages-out[\]' } |
+                         Select-Object -First 1
+                if ($found) {
+                  New-Item -ItemType Directory -Force -Path (Split-Path $destPath) | Out-Null
+                  Copy-Item $found.FullName $destPath -Force
+                  Write-Host "✓ Copiado: $ref"
+                } else {
+                  Write-Host "⚠ Não encontrado: $ref"
+                }
+              }
+            }
+          }
+
+          # ── Copia ícones mantendo estrutura de pastas ──────────────────────
+          $assets = Get-ChildItem -Recurse $workspace -Filter "*.ico" -ErrorAction SilentlyContinue |
+                      Where-Object { $_.FullName -notmatch '[\]obj[\]' -and
+                                     $_.FullName -notmatch '[\]bin[\]' -and
+                                     $_.FullName -notmatch '[\]pages-out[\]' }
           foreach ($asset in $assets) {
-            # Calcula o caminho relativo a partir da raiz do workspace
-            $rel     = $asset.FullName.Substring($srcRoot.Length + 1)
-            $destRel = $rel + ".deploy"
-            $dest    = Join-Path $pagesDir $destRel
+            $rel  = $asset.FullName.Substring($workspace.Length + 1)
+            $dest = Join-Path $pagesDir ($rel + ".deploy")
             New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
             Copy-Item $asset.FullName $dest -Force
-            Write-Host "✓ Asset copiado: $destRel"
+            Write-Host "✓ Ícone copiado: $rel.deploy"
           }
 
           Write-Host "=== Conteúdo final de pages-out ==="
           Get-ChildItem -Recurse $pagesDir | Select-Object FullName
+
+          # Verifica se os .deploy das DLLs estão na raiz
+          Write-Host "=== .deploy files na raiz ==="
+          Get-ChildItem $pagesDir -Filter "*.deploy" | Select-Object Name
 
       # ── Criar index.html ──────────────────────────────────────────────────
       - name: Criar index.html
