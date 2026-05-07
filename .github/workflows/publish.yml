@@ -159,7 +159,7 @@ jobs:
           # Precisamos copiá-los mantendo a estrutura de pastas + extensão .deploy
           $srcRoot = $workspace
           $assets  = Get-ChildItem -Recurse $workspace -Filter "*.ico" -ErrorAction SilentlyContinue |
-                       Where-Object { $_.FullName -notmatch '\obj\' -and $_.FullName -notmatch '\bin\' }
+                       Where-Object { $_.FullName -notmatch '[\\]obj[\\]' -and $_.FullName -notmatch '[\\]bin[\\]' }
 
           foreach ($asset in $assets) {
             # Calcula o caminho relativo a partir da raiz do workspace
