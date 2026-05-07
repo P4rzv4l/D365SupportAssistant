@@ -131,11 +131,12 @@ jobs:
       - name: Montar pages-out
         shell: pwsh
         run: |
-          $pagesDir = "${{ github.workspace }}\pages-out"
+          $workspace = "${{ github.workspace }}"
+          $pagesDir  = "$workspace\pages-out"
           New-Item -ItemType Directory -Force -Path $pagesDir | Out-Null
 
           # Procura o .application em qualquer lugar no workspace
-          $appFile = Get-ChildItem -Recurse "${{ github.workspace }}" -Filter "*.application" `
+          $appFile = Get-ChildItem -Recurse $workspace -Filter "*.application" `
                        -ErrorAction SilentlyContinue | Select-Object -First 1
 
           if (-not $appFile) {
@@ -151,6 +152,23 @@ jobs:
           # Garante que o .application está na raiz com o nome correto
           if ($appFile.Name -ne "D365SupportAssistant.application") {
             Copy-Item $appFile.FullName "$pagesDir\D365SupportAssistant.application" -Force
+          }
+
+          # ── Copia arquivos de asset que o ClickOnce referencia mas não publica ──
+          # O manifest lista App\Assets\*.ico mas o MSBuild não os copia para app.publish
+          # Precisamos copiá-los mantendo a estrutura de pastas + extensão .deploy
+          $srcRoot = $workspace
+          $assets  = Get-ChildItem -Recurse $workspace -Filter "*.ico" -ErrorAction SilentlyContinue |
+                       Where-Object { $_.FullName -notmatch '\obj\' -and $_.FullName -notmatch '\bin\' }
+
+          foreach ($asset in $assets) {
+            # Calcula o caminho relativo a partir da raiz do workspace
+            $rel     = $asset.FullName.Substring($srcRoot.Length + 1)
+            $destRel = $rel + ".deploy"
+            $dest    = Join-Path $pagesDir $destRel
+            New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
+            Copy-Item $asset.FullName $dest -Force
+            Write-Host "✓ Asset copiado: $destRel"
           }
 
           Write-Host "=== Conteúdo final de pages-out ==="
