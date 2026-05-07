@@ -87,8 +87,25 @@ jobs:
             Write-Error "✗ MSBuild falhou"
             exit 1
           }
-          Write-Host "✓ Publicado em $publishDir"
-          Get-ChildItem -Recurse $publishDir | Select-Object FullName | Format-Table -AutoSize
+          Write-Host "✓ MSBuild concluído"
+
+          # Diagnóstico: mostra onde o MSBuild publicou os arquivos
+          Write-Host "=== Conteúdo de publish-out ==="
+          if (Test-Path $publishDir) {
+            Get-ChildItem -Recurse $publishDir | Select-Object FullName
+          } else {
+            Write-Host "(publish-out não existe)"
+          }
+
+          # Procura o .application em qualquer lugar no workspace
+          Write-Host "=== Procurando .application no workspace ==="
+          Get-ChildItem -Recurse "${{ github.workspace }}" -Filter "*.application" -ErrorAction SilentlyContinue |
+            Select-Object FullName
+
+          # Mostra o caminho real de publish do ClickOnce no csproj
+          Write-Host "=== Procurando pasta app.publish ==="
+          Get-ChildItem -Recurse "${{ github.workspace }}" -Filter "app.publish" -ErrorAction SilentlyContinue |
+            Select-Object FullName
 
       # ── Montar pages-out ──────────────────────────────────────────────────
       - name: Montar pages-out
