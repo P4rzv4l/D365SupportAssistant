@@ -11,12 +11,6 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<None Remove="App\Assets\logo-branco.ico" />
-		<None Remove="App\Assets\logo-preto.ico" />
-		<None Remove="App\Assets\logo-roxo.ico" />
-	</ItemGroup>
-
-	<ItemGroup>
 		<ApplicationDefinition Include="App\App.xaml">
 			<Generator>MSBuild:Compile</Generator>
 			<SubType>Designer</SubType>
@@ -33,18 +27,6 @@
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
 		</Content>
-		<Content Include="App\Assets\logo-roxo.ico">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-		</Content>
-		<Content Include="App\Assets\logo-branco.ico">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-		</Content>
-		<Content Include="App\Assets\logo-preto.ico">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-		</Content>
 	</ItemGroup>
 
 	<ItemGroup>
@@ -60,12 +42,6 @@
 		<PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
 		<PackageReference Include="Microsoft.Toolkit.Uwp.Notifications" Version="7.1.3" />
 		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
-	</ItemGroup>
-
-	<ItemGroup>
-		<Resource Include="App\Assets\logo-branco.ico" />
-		<Resource Include="App\Assets\logo-preto.ico" />
-		<Resource Include="App\Assets\logo-roxo.ico" />
 	</ItemGroup>
 
 </Project>
