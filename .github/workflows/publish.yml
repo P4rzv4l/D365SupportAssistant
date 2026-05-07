@@ -63,6 +63,23 @@ jobs:
       - name: Restaurar NuGet
         run: dotnet restore D365SupportAssistant.csproj -r win-x64
 
+      # ── Importar certificado no store ────────────────────────────────────
+      - name: Importar certificado no store
+        shell: pwsh
+        run: |
+          $pfxPath = "${{ github.workspace }}\D365SupportAssistant.pfx"
+          $pfxPwd  = ConvertTo-SecureString "Shouko3613968743#" -AsPlainText -Force
+          $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
+            $pfxPath, "Shouko3613968743#", "MachineKeySet,PersistKeySet,Exportable"
+          )
+          $store = New-Object System.Security.Cryptography.X509Certificates.X509Store("My","CurrentUser")
+          $store.Open("ReadWrite")
+          $store.Add($cert)
+          $store.Close()
+          Write-Host "✓ Certificado importado: $($cert.Thumbprint)"
+          echo "CERT_THUMB=$($cert.Thumbprint)" >> $env:GITHUB_OUTPUT
+        id: cert
+
       # ── Publicar via MSBuild ClickOnce (sem .pubxml) ─────────────────────
       - name: Publicar ClickOnce via MSBuild
         shell: pwsh
@@ -88,7 +105,7 @@ jobs:
             /p:IsWebBootstrapper=true `
             /p:MapFileExtensions=true `
             /p:SignManifests=true `
-            /p:ManifestKeyFile=D365SupportAssistant_TemporaryKey.pfx `
+            /p:ManifestCertificateThumbprint="${{ steps.cert.outputs.CERT_THUMB }}" `
             /p:GenerateManifests=true `
             /p:BootstrapperEnabled=false `
             /p:SelfContained=false `
