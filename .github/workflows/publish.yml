@@ -1,6 +1,6 @@
 # =============================================================================
 #  .github/workflows/publish.yml
-#  Estratégia: MSBuild /t:Publish com ClickOnceProfile.pubxml
+#  Estratégia: MSIX + AppInstaller via GitHub Pages
 # =============================================================================
 
 name: Publicar D365 Support Assistant
@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   build-and-publish:
-    name: Build e Publicar ClickOnce
+    name: Build e Publicar MSIX
     runs-on: windows-latest
 
     steps:
@@ -54,21 +54,21 @@ jobs:
           }
           $parts = $ver.Split(".")
           while ($parts.Count -lt 4) { $parts += "0" }
-          $clickonce = $parts[0..3] -join "."
-          echo "VERSION=$ver"                >> $env:GITHUB_OUTPUT
-          echo "CLICKONCE_VERSION=$clickonce" >> $env:GITHUB_OUTPUT
-          Write-Host "Versão: $ver → ClickOnce: $clickonce"
+          $msix = $parts[0..3] -join "."
+          echo "VERSION=$ver"        >> $env:GITHUB_OUTPUT
+          echo "MSIX_VERSION=$msix"  >> $env:GITHUB_OUTPUT
+          Write-Host "Versão: $ver → MSIX: $msix"
 
       # ── NuGet ─────────────────────────────────────────────────────────────
       - name: Restaurar NuGet
         run: dotnet restore D365SupportAssistant.csproj -r win-x64
 
-      # ── Importar certificado no store ────────────────────────────────────
-      - name: Importar certificado no store
+      # ── Importar certificado ──────────────────────────────────────────────
+      - name: Importar certificado
+        id: cert
         shell: pwsh
         run: |
           $pfxPath = "${{ github.workspace }}\D365SupportAssistant.pfx"
-          $pfxPwd  = ConvertTo-SecureString "Shouko3613968743#" -AsPlainText -Force
           $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
             $pfxPath, "Shouko3613968743#", "MachineKeySet,PersistKeySet,Exportable"
           )
@@ -77,118 +77,212 @@ jobs:
           $store.Add($cert)
           $store.Close()
           Write-Host "✓ Certificado importado: $($cert.Thumbprint)"
+          Write-Host "  Subject: $($cert.Subject)"
           echo "CERT_THUMB=$($cert.Thumbprint)" >> $env:GITHUB_OUTPUT
-        id: cert
+          echo "CERT_SUBJECT=$($cert.Subject)"  >> $env:GITHUB_OUTPUT
 
-      # ── Publicar via MSBuild ClickOnce (sem .pubxml) ─────────────────────
-      - name: Publicar ClickOnce via MSBuild
+      # ── Build + Publicar binários ─────────────────────────────────────────
+      - name: Build binários
         shell: pwsh
         run: |
-          $version    = "${{ steps.version.outputs.CLICKONCE_VERSION }}"
-          $installUrl = "https://p4rzv4l.github.io/D365SupportAssistant/"
-          $appPublish = "${{ github.workspace }}\bin\Release\net8.0-windows10.0.17763.0\app.publish"
+          $binDir = "${{ github.workspace }}\bin-out"
+          dotnet publish D365SupportAssistant.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained false `
+            --output "$binDir" `
+            --nologo
+          if ($LASTEXITCODE -ne 0) { Write-Error "✗ dotnet publish falhou"; exit 1 }
+          Write-Host "✓ Binários em $binDir"
 
-          Write-Host "→ MSBuild /t:Publish versão $version"
-
-          msbuild D365SupportAssistant.csproj `
-            /t:Publish `
-            /p:Configuration=Release `
-            /p:RuntimeIdentifier=win-x64 `
-            /p:Platform="Any CPU" `
-            /p:PublishProtocol=ClickOnce `
-            /p:ApplicationVersion=$version `
-            /p:InstallUrl=$installUrl `
-            /p:UpdateUrl=$installUrl `
-            /p:UpdateEnabled=true `
-            /p:UpdateMode=Foreground `
-            /p:Install=true `
-            /p:IsWebBootstrapper=false `
-            /p:MapFileExtensions=true `
-            /p:SignManifests=true `
-            /p:ManifestCertificateThumbprint="${{ steps.cert.outputs.CERT_THUMB }}" `
-            /p:GenerateManifests=true `
-            /p:BootstrapperEnabled=false `
-            /p:ApplicationIcon= `
-            /p:SelfContained=false `
-            /p:PublishSingleFile=false `
-            /nologo `
-            /v:m
-
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "✗ MSBuild falhou"
-            exit 1
-          }
-          Write-Host "✓ MSBuild concluído"
-
-          # Procura o .application gerado
-          Write-Host "=== Procurando .application no workspace ==="
-          Get-ChildItem -Recurse "${{ github.workspace }}" -Filter "*.application" -ErrorAction SilentlyContinue |
-            Select-Object FullName
-          Write-Host "=== Procurando pasta app.publish ==="
-          Get-ChildItem -Recurse "${{ github.workspace }}" -Filter "app.publish" -ErrorAction SilentlyContinue |
-            Select-Object FullName
-
-      # ── Montar pages-out ──────────────────────────────────────────────────
-      - name: Montar pages-out
+      # ── Gerar Package Manifest (Package.appxmanifest) ─────────────────────
+      - name: Gerar Package.appxmanifest
         shell: pwsh
         run: |
-          $workspace = "${{ github.workspace }}"
-          $pagesDir  = "$workspace\pages-out"
+          $version = "${{ steps.version.outputs.MSIX_VERSION }}"
+          $subject = "${{ steps.cert.outputs.CERT_SUBJECT }}"
+          $manifest = @"
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
+  <Identity
+    Name="D365SupportAssistant"
+    Publisher="$subject"
+    Version="$version"
+    ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>D365 Support Assistant</DisplayName>
+    <PublisherDisplayName>p4rzv4l</PublisherDisplayName>
+    <Logo>Assets\logo-roxo.png</Logo>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+  <Resources>
+    <Resource Language="pt-BR" />
+  </Resources>
+  <Applications>
+    <Application Id="D365SupportAssistant" Executable="D365SupportAssistant.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="D365 Support Assistant"
+        Description="Monitor de chamados para Microsoft Dynamics 365"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\logo-roxo.png"
+        Square44x44Logo="Assets\logo-roxo.png">
+        <uap:DefaultTile />
+        <uap:SplashScreen Image="Assets\logo-roxo.png" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>
+"@
+          $manifest | Out-File "${{ github.workspace }}\Package.appxmanifest" -Encoding UTF8
+          Write-Host "✓ Package.appxmanifest gerado"
 
-          # O MSBuild gera a estrutura ClickOnce em publish-out\publish          # (porque PublishDir=publish-out\ e o ClickOnce cria subpasta publish\)
-          $publishDir = "$workspace\publish-out\publish"
-          if (-not (Test-Path $publishDir)) {
-            # Fallback: procura pasta que contenha Launcher.exe
-            Write-Host "publish-out\publish nao encontrado, procurando Launcher.exe..."
-            $launcher = Get-ChildItem -Recurse $workspace -Filter "Launcher.exe" `
-                          -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($launcher) {
-              $publishDir = $launcher.DirectoryName
-              Write-Host "OK encontrado em: $publishDir"
-            } else {
-              # Ultimo fallback: procura a pasta que tem D365SupportAssistant.application
-              $appf = Get-ChildItem -Recurse $workspace -Filter "D365SupportAssistant.application" `
-                        -ErrorAction SilentlyContinue |
-                      Where-Object { $_.DirectoryName -notlike "*pages-out*" } |
-                      Select-Object -First 1
-              if ($appf) {
-                $publishDir = $appf.DirectoryName
-                Write-Host "OK encontrado via .application em: $publishDir"
-              } else {
-                Write-Error "x Nao foi possivel encontrar a pasta de publish ClickOnce"
-                exit 1
-              }
+      # ── Converter ICO para PNG (necessário para MSIX) ─────────────────────
+      - name: Gerar Assets PNG
+        shell: pwsh
+        run: |
+          $assetsDir = "${{ github.workspace }}\bin-out\Assets"
+          New-Item -ItemType Directory -Force -Path $assetsDir | Out-Null
+
+          # Converte o .ico para .png usando System.Drawing
+          Add-Type -AssemblyName System.Drawing
+          $icoPath = "${{ github.workspace }}\App\Assets\logo-roxo.ico"
+          if (Test-Path $icoPath) {
+            $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($icoPath)
+            $bmp  = $icon.ToBitmap()
+            # Salva em tamanhos necessários para MSIX
+            foreach ($size in @(44, 150)) {
+              $resized = New-Object System.Drawing.Bitmap($size, $size)
+              $g = [System.Drawing.Graphics]::FromImage($resized)
+              $g.DrawImage($bmp, 0, 0, $size, $size)
+              $g.Dispose()
+              $resized.Save("$assetsDir\logo-roxo.png", [System.Drawing.Imaging.ImageFormat]::Png)
+              $resized.Dispose()
             }
+            $bmp.Dispose()
+            Write-Host "✓ Assets PNG gerados"
+          } else {
+            # Fallback: cria PNG vazio
+            $bmp = New-Object System.Drawing.Bitmap(150, 150)
+            $bmp.Save("$assetsDir\logo-roxo.png", [System.Drawing.Imaging.ImageFormat]::Png)
+            $bmp.Dispose()
+            Write-Host "⚠ ICO não encontrado, usando PNG placeholder"
           }
+          # Copia para raiz do bin-out também
+          Copy-Item "$assetsDir\logo-roxo.png" "${{ github.workspace }}\bin-out\logo-roxo.png" -Force
 
-          Write-Host "Usando publishDir: $publishDir"
+      # ── Empacotar MSIX com MakeAppx ───────────────────────────────────────
+      - name: Empacotar MSIX
+        shell: pwsh
+        run: |
+          $version  = "${{ steps.version.outputs.MSIX_VERSION }}"
+          $binDir   = "${{ github.workspace }}\bin-out"
+          $pagesDir = "${{ github.workspace }}\pages-out"
+          $msixPath = "$pagesDir\D365SupportAssistant.msix"
+          New-Item -ItemType Directory -Force -Path $pagesDir | Out-Null
 
-          # Usa publishDir diretamente como pages-out
-          if (Test-Path $pagesDir) { Remove-Item -Recurse -Force $pagesDir }
-          Copy-Item -Recurse -Force $publishDir $pagesDir
-          Write-Host "OK pages-out criado"
+          # Copia o appxmanifest para bin-out
+          Copy-Item "${{ github.workspace }}\Package.appxmanifest" "$binDir\AppxManifest.xml" -Force
 
-          # Garante nome correto do .application
-          $appFile = Get-ChildItem $pagesDir -Filter "*.application" | Select-Object -First 1
-          if (-not $appFile) {
-            Write-Error "x .application nao encontrado em pages-out"
-            exit 1
+          # Cria pasta Assets dentro do pacote
+          $pkgAssets = "$binDir\Assets"
+          New-Item -ItemType Directory -Force -Path $pkgAssets | Out-Null
+          Copy-Item "$binDir\logo-roxo.png" "$pkgAssets\logo-roxo.png" -Force
+
+          # Localiza MakeAppx.exe
+          $makeAppx = Get-ChildItem -Recurse "C:\Program Files (x86)\Windows Kits\10\bin" `
+                        -Filter "makeappx.exe" -ErrorAction SilentlyContinue |
+                      Where-Object { $_.FullName -match "x64" } |
+                      Select-Object -First 1
+          if (-not $makeAppx) {
+            $makeAppx = Get-ChildItem -Recurse "C:\Program Files (x86)\Windows Kits\10\bin" `
+                          -Filter "makeappx.exe" -ErrorAction SilentlyContinue |
+                        Select-Object -First 1
           }
-          if ($appFile.Name -ne "D365SupportAssistant.application") {
-            Rename-Item $appFile.FullName "D365SupportAssistant.application"
-          }
-          Write-Host "OK $($appFile.Name) pronto"
+          if (-not $makeAppx) { Write-Error "✗ MakeAppx.exe não encontrado"; exit 1 }
+          Write-Host "✓ MakeAppx: $($makeAppx.FullName)"
 
-          Write-Host "=== Conteudo final de pages-out ==="
-          Get-ChildItem -Recurse $pagesDir | Select-Object FullName
+          # Empacota
+          & $makeAppx.FullName pack /d "$binDir" /p "$msixPath" /nv /o
+          if ($LASTEXITCODE -ne 0) { Write-Error "✗ MakeAppx falhou"; exit 1 }
+          Write-Host "✓ MSIX criado: $msixPath"
+
+      # ── Assinar MSIX ──────────────────────────────────────────────────────
+      - name: Assinar MSIX
+        shell: pwsh
+        run: |
+          $msixPath  = "${{ github.workspace }}\pages-out\D365SupportAssistant.msix"
+          $certThumb = "${{ steps.cert.outputs.CERT_THUMB }}"
+
+          # Localiza SignTool.exe
+          $signTool = Get-ChildItem -Recurse "C:\Program Files (x86)\Windows Kits\10\bin" `
+                        -Filter "signtool.exe" -ErrorAction SilentlyContinue |
+                      Where-Object { $_.FullName -match "x64" } |
+                      Select-Object -First 1
+          if (-not $signTool) { Write-Error "✗ SignTool.exe não encontrado"; exit 1 }
+          Write-Host "✓ SignTool: $($signTool.FullName)"
+
+          & $signTool.FullName sign /sha1 $certThumb /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "$msixPath"
+          if ($LASTEXITCODE -ne 0) {
+            # Sem timestamp (sem internet no runner)
+            & $signTool.FullName sign /sha1 $certThumb /fd SHA256 "$msixPath"
+          }
+          if ($LASTEXITCODE -ne 0) { Write-Error "✗ Assinatura falhou"; exit 1 }
+          Write-Host "✓ MSIX assinado"
+
+      # ── Gerar .appinstaller ───────────────────────────────────────────────
+      - name: Gerar .appinstaller
+        shell: pwsh
+        run: |
+          $version   = "${{ steps.version.outputs.MSIX_VERSION }}"
+          $baseUrl   = "https://p4rzv4l.github.io/D365SupportAssistant"
+          $pagesDir  = "${{ github.workspace }}\pages-out"
+
+          $appinstaller = @"
+<?xml version="1.0" encoding="utf-8"?>
+<AppInstaller
+  xmlns="http://schemas.microsoft.com/appx/appinstaller/2017/2"
+  Uri="$baseUrl/D365SupportAssistant.appinstaller"
+  Version="$version">
+  <MainPackage
+    Name="D365SupportAssistant"
+    Version="$version"
+    Publisher="${{ steps.cert.outputs.CERT_SUBJECT }}"
+    ProcessorArchitecture="x64"
+    Uri="$baseUrl/D365SupportAssistant.msix" />
+  <UpdateSettings>
+    <OnLaunch HoursBetweenUpdateChecks="0" UpdateBlocksActivation="false" ShowPrompt="true" />
+  </UpdateSettings>
+</AppInstaller>
+"@
+          $appinstaller | Out-File "$pagesDir\D365SupportAssistant.appinstaller" -Encoding UTF8
+          Write-Host "✓ .appinstaller gerado"
+
+      # ── Exportar certificado público (.cer) ───────────────────────────────
+      - name: Exportar certificado público
+        shell: pwsh
+        run: |
+          $certThumb = "${{ steps.cert.outputs.CERT_THUMB }}"
+          $pagesDir  = "${{ github.workspace }}\pages-out"
+          $cert = Get-Item "Cert:\CurrentUser\My\$certThumb"
+          $cerBytes = $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+          [System.IO.File]::WriteAllBytes("$pagesDir\D365SupportAssistant.cer", $cerBytes)
+          Write-Host "✓ Certificado público exportado (.cer)"
 
       # ── Criar index.html ──────────────────────────────────────────────────
       - name: Criar index.html
         shell: pwsh
         run: |
-          $version  = "${{ steps.version.outputs.VERSION }}"
-          $date     = (Get-Date -Format "dd/MM/yyyy HH:mm")
-          $dest     = "${{ github.workspace }}\pages-out"
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $date    = (Get-Date -Format "dd/MM/yyyy HH:mm")
+          $dest    = "${{ github.workspace }}\pages-out"
           $html  = '<!DOCTYPE html>'
           $html += '<html lang="pt-BR"><head>'
           $html += '<meta charset="UTF-8">'
@@ -199,7 +293,7 @@ jobs:
           $html += "body{font-family:'Segoe UI',sans-serif;background:#0D1117;color:#E6EDF3;"
           $html += 'display:flex;align-items:center;justify-content:center;min-height:100vh}'
           $html += '.card{background:#161B22;border:1px solid #30363D;border-radius:12px;'
-          $html += 'padding:40px 48px;max-width:560px;width:100%;text-align:center}'
+          $html += 'padding:40px 48px;max-width:580px;width:100%;text-align:center}'
           $html += '.logo{font-size:48px;margin-bottom:16px}'
           $html += 'h1{font-size:24px;font-weight:700;margin-bottom:8px}'
           $html += '.ver{display:inline-block;background:#7C3AED22;color:#A78BFA;'
@@ -212,9 +306,9 @@ jobs:
           $html += '.btn:hover{background:#6D28D9}'
           $html += '.btn2{display:block;color:#58A6FF;text-decoration:none;'
           $html += 'padding:10px 32px;border-radius:8px;font-size:14px;'
-          $html += 'border:1px solid #30363D;margin-bottom:24px}'
+          $html += 'border:1px solid #30363D;margin-bottom:8px}'
           $html += '.note{background:#0D1117;border:1px solid #30363D;border-radius:8px;'
-          $html += 'padding:12px 16px;font-size:12px;color:#484F58;text-align:left}'
+          $html += 'padding:12px 16px;font-size:12px;color:#484F58;text-align:left;margin-top:16px}'
           $html += '.note strong{color:#8B949E}'
           $html += '.date{font-size:11px;color:#30363D;margin-top:20px}'
           $html += '</style></head><body>'
@@ -224,10 +318,13 @@ jobs:
           $html += "<span class=`"ver`">v$version</span>"
           $html += '<p>Monitor de chamados para Microsoft Dynamics 365.<br>'
           $html += 'Alertas automáticos, tracker de tempo e análise por IA.</p>'
-          $html += '<a class="btn" href="D365SupportAssistant.application">⬇ Instalar via ClickOnce</a>'
-          $html += '<a class="btn2" href="https://dotnet.microsoft.com/download/dotnet/8.0">📦 Baixar .NET 8 Runtime (necessário)</a>'
+          $html += '<a class="btn" href="D365SupportAssistant.appinstaller">⬇ Instalar (Auto-update)</a>'
+          $html += '<a class="btn2" href="D365SupportAssistant.msix">📦 Baixar .msix direto</a>'
+          $html += '<a class="btn2" href="D365SupportAssistant.cer">🔐 Instalar certificado</a>'
           $html += '<div class="note">'
           $html += '<strong>Requisitos:</strong> Windows 10/11 64-bit + .NET 8 Desktop Runtime<br><br>'
+          $html += '<strong>Primeira instalação:</strong> baixe e instale o certificado (.cer) primeiro,<br>'
+          $html += 'depois clique em "Instalar (Auto-update)" para instalar com atualizações automáticas.<br><br>'
           $html += '<strong>Atualização automática:</strong> o app verifica novas versões ao iniciar.'
           $html += '</div>'
           $html += "<div class=`"date`">Publicado em $date · v$version</div>"
@@ -258,6 +355,6 @@ jobs:
         run: |
           echo "================================================"
           echo "✅ Publicado com sucesso!"
-          echo "📦 https://p4rzv4l.github.io/D365SupportAssistant/"
-          echo "🔗 https://p4rzv4l.github.io/D365SupportAssistant/D365SupportAssistant.application"
+          echo "🔗 https://p4rzv4l.github.io/D365SupportAssistant/"
+          echo "📦 https://p4rzv4l.github.io/D365SupportAssistant/D365SupportAssistant.appinstaller"
           echo "================================================"
