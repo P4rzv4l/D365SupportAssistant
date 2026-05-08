@@ -102,45 +102,45 @@ jobs:
           $version = "${{ steps.version.outputs.MSIX_VERSION }}"
           $subject = "${{ steps.cert.outputs.CERT_SUBJECT }}"
           $manifest = @"
-            <?xml version="1.0" encoding="utf-8"?>
-            <Package
-              xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
-              xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
-              xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
-              <Identity
-                Name="D365SupportAssistant"
-                Publisher="$subject"
-                Version="$version"
-                ProcessorArchitecture="x64" />
-              <Properties>
-                <DisplayName>D365 Support Assistant</DisplayName>
-                <PublisherDisplayName>p4rzv4l</PublisherDisplayName>
-                <Logo>Assets\logo-roxo.png</Logo>
-              </Properties>
-              <Dependencies>
-                <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22621.0" />
-              </Dependencies>
-              <Resources>
-                <Resource Language="pt-BR" />
-              </Resources>
-              <Applications>
-                <Application Id="D365SupportAssistant" Executable="D365SupportAssistant.exe" EntryPoint="Windows.FullTrustApplication">
-                  <uap:VisualElements
-                    DisplayName="D365 Support Assistant"
-                    Description="Monitor de chamados para Microsoft Dynamics 365"
-                    BackgroundColor="transparent"
-                    Square150x150Logo="Assets\logo-roxo.png"
-                    Square44x44Logo="Assets\logo-roxo.png">
-                    <uap:DefaultTile />
-                    <uap:SplashScreen Image="Assets\logo-roxo.png" />
-                  </uap:VisualElements>
-                </Application>
-              </Applications>
-              <Capabilities>
-                <rescap:Capability Name="runFullTrust" />
-              </Capabilities>
-            </Package>
-          "@
+                        <?xml version="1.0" encoding="utf-8"?>
+                        <Package
+                          xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+                          xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+                          xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
+                          <Identity
+                            Name="D365SupportAssistant"
+                            Publisher="$subject"
+                            Version="$version"
+                            ProcessorArchitecture="x64" />
+                          <Properties>
+                            <DisplayName>D365 Support Assistant</DisplayName>
+                            <PublisherDisplayName>p4rzv4l</PublisherDisplayName>
+                            <Logo>Assets\logo-roxo.png</Logo>
+                          </Properties>
+                          <Dependencies>
+                            <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22621.0" />
+                          </Dependencies>
+                          <Resources>
+                            <Resource Language="pt-BR" />
+                          </Resources>
+                          <Applications>
+                            <Application Id="D365SupportAssistant" Executable="D365SupportAssistant.exe" EntryPoint="Windows.FullTrustApplication">
+                              <uap:VisualElements
+                                DisplayName="D365 Support Assistant"
+                                Description="Monitor de chamados para Microsoft Dynamics 365"
+                                BackgroundColor="transparent"
+                                Square150x150Logo="Assets\logo-roxo.png"
+                                Square44x44Logo="Assets\logo-roxo.png">
+                                <uap:DefaultTile />
+                                <uap:SplashScreen Image="Assets\logo-roxo.png" />
+                              </uap:VisualElements>
+                            </Application>
+                          </Applications>
+                          <Capabilities>
+                            <rescap:Capability Name="runFullTrust" />
+                          </Capabilities>
+                        </Package>
+                      "@
           $manifest | Out-File "${{ github.workspace }}\Package.appxmanifest" -Encoding UTF8
           Write-Host "✓ Package.appxmanifest gerado"
 
