@@ -89,10 +89,12 @@ public partial class App : Application
                 services.AddTransient<IncidentsViewModel>();
                 services.AddTransient<AlertsViewModel>();
                 services.AddTransient<TrackerViewModel>();
+                services.AddTransient<TrackerHistoryViewModel>();
                 services.AddTransient<AIViewModel>();
                 services.AddTransient<SettingsViewModel>();
                 services.AddTransient<VaultViewModel>();
                 services.AddTransient<WebResourcesViewModel>();
+                services.AddSingleton<TodoViewModel>();
 
                 // Janela principal
                 services.AddSingleton<MainWindow>();

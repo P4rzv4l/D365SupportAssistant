@@ -1,5 +1,5 @@
 ﻿// =============================================================================
-//  DashboardView.xaml.cs — Code-behind do Dashboard (redesenhado)
+//  DashboardView.xaml.cs — Dashboard redesenhado
 // =============================================================================
 
 using D365Assistant.Core.Models;
@@ -22,11 +22,12 @@ public partial class DashboardView : Page
     private readonly Dictionary<string, Button> _priBtns = [];
     private readonly Dictionary<string, Button> _statusBtns = [];
 
-    // Cores base do tema
-    private static readonly Color BgRow = Color.FromRgb(0x0F, 0x15, 0x20);
-    private static readonly Color BgRowHover = Color.FromRgb(0x14, 0x1B, 0x27);
-    private static readonly Color BorderRow = Color.FromRgb(0x12, 0x19, 0x2A);
-    private static readonly Color BorderHov = Color.FromRgb(0x1E, 0x26, 0x33);
+    // Palette
+    private static readonly Color CBg = Color.FromRgb(0x08, 0x0C, 0x12);
+    private static readonly Color CSurface = Color.FromRgb(0x0F, 0x15, 0x20);
+    private static readonly Color CBorder = Color.FromRgb(0x1E, 0x26, 0x33);
+    private static readonly Color CText = Color.FromRgb(0xE2, 0xE8, 0xF0);
+    private static readonly Color CMuted = Color.FromRgb(0x4B, 0x55, 0x63);
 
     public DashboardView(DashboardViewModel vm, TrackerViewModel trackerVm, MainWindow mainWindow)
     {
@@ -34,15 +35,15 @@ public partial class DashboardView : Page
         _vm = vm;
         _trackerVm = trackerVm;
         _mainWindow = mainWindow;
-
         DataContext = _vm;
+
         BuildFilterButtons();
         _vm.Incidents.CollectionChanged += (_, _) => RenderIncidents();
+        _vm.PropertyChanged += (_, _) => RenderKpis();
         RenderKpis();
     }
 
-    // ── KPIs ──────────────────────────────────────────────────────────────────
-
+    // KPIs
     private void RenderKpis()
     {
         KpiTotal.Text = _vm.TotalAtivo.ToString();
@@ -51,58 +52,58 @@ public partial class DashboardView : Page
         KpiSla.Text = _vm.RiscoSla.ToString();
         KpiEsgotado.Text = _vm.HorasEsgotadas.ToString();
         KpiNew.Text = _vm.NovosHoje.ToString();
+        KpiSemCom.Text = _vm.SemPrimeiraCom.ToString();
         LastUpdatedText.Text = _vm.LastUpdated;
 
-        KpiUrgente.Foreground = _vm.Urgentes > 0 ? Brush("#FCA5A5") : Brush("#6B7280");
-        KpiHigh.Foreground = _vm.AltaPrioridade > 0 ? Brush("#FCD34D") : Brush("#6B7280");
-        KpiSla.Foreground = _vm.RiscoSla > 0 ? Brush("#FCD34D") : Brush("#6B7280");
-        KpiEsgotado.Foreground = _vm.HorasEsgotadas > 0 ? Brush("#FCA5A5") : Brush("#6B7280");
+        KpiUrgente.Foreground = _vm.Urgentes > 0 ? B("#FCA5A5") : B("#374151");
+        KpiHigh.Foreground = _vm.AltaPrioridade > 0 ? B("#FCD34D") : B("#374151");
+        KpiSla.Foreground = _vm.RiscoSla > 0 ? B("#FCD34D") : B("#374151");
+        KpiEsgotado.Foreground = _vm.HorasEsgotadas > 0 ? B("#FCA5A5") : B("#374151");
+        KpiSemCom.Foreground = _vm.SemPrimeiraCom > 0 ? B("#FB923C") : B("#374151");
     }
 
-    // ── Filtros ───────────────────────────────────────────────────────────────
-
+    // Filtros
     private void BuildFilterButtons()
     {
         foreach (var lbl in _vm.PriorityOptions)
         {
-            var btn = MakePill(lbl);
-            btn.Click += (_, _) => { _vm.PriFilter = lbl; HighlightFilter(_priBtns, lbl); };
+            var btn = Pill(lbl);
+            btn.Click += (_, _) => { _vm.PriFilter = lbl; Activate(_priBtns, lbl); };
             _priBtns[lbl] = btn;
             PriFilterPanel.Children.Add(btn);
         }
-        HighlightFilter(_priBtns, "Todos");
+        Activate(_priBtns, "Todos");
 
         foreach (var lbl in _vm.StatusOptions)
         {
-            var btn = MakePill(lbl);
-            btn.Click += (_, _) => { _vm.StatusFilter = lbl; HighlightFilter(_statusBtns, lbl); };
+            var btn = Pill(lbl);
+            btn.Click += (_, _) => { _vm.StatusFilter = lbl; Activate(_statusBtns, lbl); };
             _statusBtns[lbl] = btn;
             StatusFilterPanel.Children.Add(btn);
         }
-        HighlightFilter(_statusBtns, "Todos");
+        Activate(_statusBtns, "Todos");
     }
 
-    private static Button MakePill(string label) => new()
+    private static Button Pill(string label) => new()
     {
         Content = label,
         FontFamily = new FontFamily("Segoe UI Semibold"),
         FontSize = 11,
-        Padding = new Thickness(10, 3, 10, 3),
+        Padding = new Thickness(11, 4, 11, 4),
         Margin = new Thickness(0, 0, 5, 0),
         BorderThickness = new Thickness(1),
         Cursor = Cursors.Hand,
         Background = new SolidColorBrush(Color.FromRgb(0x0F, 0x15, 0x20)),
         Foreground = new SolidColorBrush(Color.FromRgb(0x4B, 0x55, 0x63)),
-        BorderBrush = new SolidColorBrush(Color.FromRgb(0x12, 0x19, 0x2A)),
+        BorderBrush = new SolidColorBrush(Color.FromRgb(0x1E, 0x26, 0x33)),
     };
 
-    private static void HighlightFilter(Dictionary<string, Button> btns, string active)
+    private static void Activate(Dictionary<string, Button> btns, string active)
     {
         foreach (var (lbl, btn) in btns)
         {
             if (lbl == active)
             {
-                // roxo ativo
                 btn.Background = new SolidColorBrush(Color.FromArgb(0x22, 0xA7, 0x8B, 0xFA));
                 btn.Foreground = new SolidColorBrush(Color.FromRgb(0xA7, 0x8B, 0xFA));
                 btn.BorderBrush = new SolidColorBrush(Color.FromArgb(0x55, 0xA7, 0x8B, 0xFA));
@@ -111,137 +112,126 @@ public partial class DashboardView : Page
             {
                 btn.Background = new SolidColorBrush(Color.FromRgb(0x0F, 0x15, 0x20));
                 btn.Foreground = new SolidColorBrush(Color.FromRgb(0x4B, 0x55, 0x63));
-                btn.BorderBrush = new SolidColorBrush(Color.FromRgb(0x12, 0x19, 0x2A));
+                btn.BorderBrush = new SolidColorBrush(Color.FromRgb(0x1E, 0x26, 0x33));
             }
         }
     }
 
-    // ── Renderização ──────────────────────────────────────────────────────────
-
+    // Lista
     private void RenderIncidents()
     {
-        IncidentList.ItemsSource = null;
         IncidentList.Items.Clear();
-
         var count = _vm.Incidents.Count;
         IncidentCountText.Text = $"{count} chamado{(count != 1 ? "s" : "")}";
-
         RenderKpis();
 
-        var stack = new StackPanel();
-        foreach (var snap in _vm.Incidents)
-            stack.Children.Add(BuildRow(snap));
+        var panel = new StackPanel();
 
         if (count == 0)
-            stack.Children.Add(new TextBlock
+            panel.Children.Add(new TextBlock
             {
                 Text = "Nenhum chamado encontrado.",
                 FontSize = 13,
-                Foreground = Brush("#1F2937"),
+                Foreground = new SolidColorBrush(CMuted),
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 40, 0, 40)
+                Margin = new Thickness(0, 48, 0, 0),
             });
+        else
+            foreach (var snap in _vm.Incidents)
+                panel.Children.Add(BuildCard(snap));
 
-        IncidentList.Items.Add(stack);
+        IncidentList.Items.Add(panel);
     }
 
-    // ── Card de chamado ───────────────────────────────────────────────────────
-
-    private Border BuildRow(IncidentSnapshot snap)
+    // Card
+    private Border BuildCard(IncidentSnapshot snap)
     {
-        // Card container
+        var (priLabel, priFg, priBg) = PriorityInfo(snap.PriorityCode);
+        var (stLabel, stFg, stBg) = StatusInfo(snap.StatusCode);
+
         var card = new Border
         {
-            Background = new SolidColorBrush(BgRow),
-            BorderBrush = new SolidColorBrush(BorderRow),
+            Background = new SolidColorBrush(CSurface),
+            BorderBrush = new SolidColorBrush(CBorder),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
             Cursor = Cursors.Hand,
-            Margin = new Thickness(0, 0, 0, 6),
+            Margin = new Thickness(0, 0, 0, 7),
+            ClipToBounds = true,
         };
         card.MouseEnter += (_, _) =>
         {
-            card.Background = new SolidColorBrush(BgRowHover);
-            card.BorderBrush = new SolidColorBrush(BorderHov);
+            card.Background = new SolidColorBrush(Color.FromRgb(0x13, 0x1B, 0x27));
+            card.BorderBrush = new SolidColorBrush(Color.FromRgb(0x2D, 0x38, 0x48));
         };
         card.MouseLeave += (_, _) =>
         {
-            card.Background = new SolidColorBrush(BgRow);
-            card.BorderBrush = new SolidColorBrush(BorderRow);
+            card.Background = new SolidColorBrush(CSurface);
+            card.BorderBrush = new SolidColorBrush(CBorder);
         };
         card.ContextMenu = BuildContextMenu(snap);
 
-        // Layout interno: barra pri | corpo | ações
-        var grid = new Grid { ClipToBounds = true };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        card.Child = grid;
+        var root = new Grid();
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(4) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        card.Child = root;
 
-        // Barra de prioridade (lado esquerdo, bordas arredondadas à esquerda)
-        var priBar = new Border
+        // Priority bar
+        var priBarEl = new Border
         {
-            Background = PriorityBarColor(snap.PriorityCode),
+            Background = PriorityBarBrush(snap.PriorityCode),
             CornerRadius = new CornerRadius(9, 0, 0, 9),
         };
-        Grid.SetColumn(priBar, 0);
-        grid.Children.Add(priBar);
+        Grid.SetColumn(priBarEl, 0);
+        root.Children.Add(priBarEl);
 
-        // ── Corpo ──────────────────────────────────────────────────────────
-        var body = new StackPanel { Margin = new Thickness(13, 9, 10, 9) };
+        // Body
+        var body = new StackPanel { Margin = new Thickness(14, 10, 10, 10) };
         Grid.SetColumn(body, 1);
-        grid.Children.Add(body);
+        root.Children.Add(body);
 
-        // Linha 1: ticket + badges + meta direita
+        // Row 1: badges + chips
         var row1 = new Grid();
         row1.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         row1.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         body.Children.Add(row1);
 
-        // Esquerda: ticket + badges
-        var left = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
-        Grid.SetColumn(left, 0);
-        row1.Children.Add(left);
+        var badgeRow = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(badgeRow, 0);
+        row1.Children.Add(badgeRow);
 
-        // Número do chamado (clicável se tiver URL)
-        var ticketLbl = new TextBlock
+        // Ticket number
+        var ticketTb = new TextBlock
         {
             Text = snap.TicketNumber,
-            FontWeight = FontWeights.SemiBold,
             FontSize = 12,
+            FontWeight = FontWeights.SemiBold,
             FontFamily = new FontFamily("Consolas"),
-            Foreground = !string.IsNullOrEmpty(snap.BzpUrl)
-                            ? Brush("#60A5FA")
-                            : Brush("#6B7280"),
+            Foreground = !string.IsNullOrEmpty(snap.BzpUrl) ? B("#60A5FA") : B("#4B5563"),
             Margin = new Thickness(0, 0, 8, 0),
             Cursor = !string.IsNullOrEmpty(snap.BzpUrl) ? Cursors.Hand : Cursors.Arrow,
+            VerticalAlignment = VerticalAlignment.Center,
         };
         if (!string.IsNullOrEmpty(snap.BzpUrl))
         {
             var url = snap.BzpUrl;
-            ticketLbl.MouseLeftButtonUp += (_, _) =>
+            ticketTb.MouseLeftButtonUp += (_, _) =>
                 System.Diagnostics.Process.Start(
                     new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
         }
-        left.Children.Add(ticketLbl);
+        badgeRow.Children.Add(ticketTb);
+        badgeRow.Children.Add(Badge(priLabel, priFg, priBg));
+        badgeRow.Children.Add(Badge(stLabel, stFg, stBg));
 
-        // Badge prioridade
-        var (priLabel, priFg, priBg) = snap.PriorityCode switch
-        {
-            419500000 => ("Urgente", "#FCA5A5", "#3B0C0C"),
-            1 => ("Alto", "#FCD34D", "#3B2A00"),
-            2 => ("Normal", "#D1A827", "#1E1A00"),
-            3 => ("Baixa", "#86EFAC", "#0A2010"),
-            _ => ("—", "#6B7280", "#0F1520"),
-        };
-        left.Children.Add(MakeBadge(priLabel, priFg, priBg));
+        // 1a comunicação flag
+        if (!snap.FirstResponseSent)
+            badgeRow.Children.Add(Badge("⚡ 1ª Com.", "#F97316", "#2A1200"));
+        else
+            badgeRow.Children.Add(Badge("✓ Respondido", "#4ADE80", "#0A2010"));
 
-        // Badge status
-        var (stLabel, stFg, stBg) = StatusInfo(snap.StatusCode);
-        left.Children.Add(MakeBadge(stLabel, stFg, stBg));
-
-        // Tipo de caso
-        var caseType = snap.CaseTypeCode switch
+        // Case type
+        var ct = snap.CaseTypeCode switch
         {
             1 => "Dúvida",
             275500001 => "Garantia",
@@ -253,38 +243,36 @@ public partial class DashboardView : Page
             419500000 => "Sugestão Bot",
             _ => ""
         };
-        if (!string.IsNullOrEmpty(caseType))
-            left.Children.Add(new TextBlock
+        if (!string.IsNullOrEmpty(ct))
+            badgeRow.Children.Add(new TextBlock
             {
-                Text = $"· {caseType}",
+                Text = $"· {ct}",
                 FontSize = 10.5,
-                Foreground = Brush("#1F2937"),
-                Margin = new Thickness(5, 0, 0, 0),
+                Foreground = new SolidColorBrush(CMuted),
+                Margin = new Thickness(4, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
             });
 
-        // Direita: chips de idle / timer / esgotado
-        var right = new StackPanel
+        // Right chips
+        var chips = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        Grid.SetColumn(right, 1);
-        row1.Children.Add(right);
+        Grid.SetColumn(chips, 1);
+        row1.Children.Add(chips);
 
-        // Horas esgotadas
         if (snap.BzHorasEsgotadas)
-            right.Children.Add(new TextBlock
+            chips.Children.Add(new TextBlock
             {
                 Text = "⏰ esgotado",
                 FontSize = 10.5,
-                Foreground = Brush("#F59E0B"),
+                Foreground = B("#F59E0B"),
                 Margin = new Thickness(0, 0, 10, 0),
                 VerticalAlignment = VerticalAlignment.Center,
             });
 
-        // Timer rastreado
         try
         {
             var secs = App.Services.GetRequiredService<Core.Services.StorageService>()
@@ -292,12 +280,14 @@ public partial class DashboardView : Page
             if (secs > 0)
             {
                 var t = TimeSpan.FromSeconds(secs);
-                var fmt = t.Hours > 0 ? $"{t.Hours}h {t.Minutes:D2}m" : $"{t.Minutes}m {t.Seconds:D2}s";
-                var chip = new Border
+                var fmt = t.Hours > 0 ? $"{t.Hours}h {t.Minutes:D2}m" : $"{t.Minutes}m";
+                chips.Children.Add(new Border
                 {
                     Background = new SolidColorBrush(Color.FromArgb(0x22, 0xA7, 0x8B, 0xFA)),
-                    CornerRadius = new CornerRadius(4),
-                    Padding = new Thickness(6, 1, 6, 1),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(0x44, 0xA7, 0x8B, 0xFA)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(5),
+                    Padding = new Thickness(7, 2, 7, 2),
                     Margin = new Thickness(0, 0, 10, 0),
                     VerticalAlignment = VerticalAlignment.Center,
                     Child = new TextBlock
@@ -305,125 +295,127 @@ public partial class DashboardView : Page
                         Text = $"⏱ {fmt}",
                         FontFamily = new FontFamily("Consolas"),
                         FontSize = 10.5,
-                        Foreground = Brush("#A78BFA"),
+                        Foreground = B("#A78BFA"),
                     }
-                };
-                right.Children.Add(chip);
+                });
             }
         }
         catch { }
 
-        // Tempo parado
         var idleH = snap.HoursSinceModified;
-        var idleTxt = idleH < 1 ? $"{(int)(idleH * 60)}m parado"
-                    : idleH < 24 ? $"{idleH:F1}h parado"
-                                   : $"{idleH / 24:F1}d parado";
-        var idleFg = idleH > 48 ? "#EF4444"
-                    : idleH > 8 ? "#F59E0B"
-                                   : "#1F2937";
-        right.Children.Add(new TextBlock
+        var idleTxt = idleH < 1 ? $"{(int)(idleH * 60)}m atrás"
+                    : idleH < 24 ? $"{idleH:F1}h atrás"
+                                 : $"{idleH / 24:F0}d atrás";
+        var idleFg = idleH > 48 ? "#EF4444" : idleH > 8 ? "#F59E0B" : "#4B5563";
+        chips.Children.Add(new TextBlock
         {
             Text = idleTxt,
             FontSize = 10.5,
-            Foreground = Brush(idleFg),
+            Foreground = B(idleFg),
             VerticalAlignment = VerticalAlignment.Center,
         });
 
-        // Linha 2: título + cliente
-        var titleText = snap.Title.Length > 80 ? snap.Title[..80] + "…" : snap.Title;
-        var cliente = snap.CustomerDisplayName;
-        var row2 = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
-        row2.Children.Add(new TextBlock
-        {
-            Text = titleText,
-            FontSize = 12.5,
-            Foreground = Brush("#E2E8F0"),
-        });
-        if (!string.IsNullOrEmpty(cliente))
+        // Row 2: title + customer
+        var row2 = new WrapPanel { Margin = new Thickness(0, 5, 0, 0) };
+        var titleTx = snap.Title.Length > 90 ? snap.Title[..90] + "…" : snap.Title;
+        row2.Children.Add(new TextBlock { Text = titleTx, FontSize = 12.5, Foreground = new SolidColorBrush(CText) });
+        var cl = snap.CustomerDisplayName;
+        if (!string.IsNullOrEmpty(cl))
             row2.Children.Add(new TextBlock
             {
-                Text = $"  ·  {(cliente.Length > 35 ? cliente[..35] + "…" : cliente)}",
+                Text = $"  ·  {(cl.Length > 35 ? cl[..35] + "…" : cl)}",
                 FontSize = 11,
-                Foreground = Brush("#4B5563"),
+                Foreground = new SolidColorBrush(CMuted),
                 VerticalAlignment = VerticalAlignment.Center,
             });
         body.Children.Add(row2);
 
-        // ── Botões de ação ────────────────────────────────────────────────
-        var actPanel = new StackPanel
-        {
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 12, 0),
-        };
-        Grid.SetColumn(actPanel, 2);
-        grid.Children.Add(actPanel);
+        // Action buttons
+        var actions = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
+        Grid.SetColumn(actions, 2);
+        root.Children.Add(actions);
 
-        var btnTimer = MakeActionBtn("Timer ▶",
-            fg: "#86EFAC", bg: Color.FromArgb(0x1E, 0x22, 0xC5, 0x5E),
-            border: Color.FromArgb(0x44, 0x22, 0xC5, 0x5E));
+        var btnTimer = ActionBtn("▶ Timer", "#86EFAC",
+            Color.FromArgb(0x1E, 0x22, 0xC5, 0x5E), Color.FromArgb(0x44, 0x22, 0xC5, 0x5E));
         btnTimer.Click += (_, _) => _mainWindow.QuickStartTimer(snap.TicketNumber, snap.Title);
 
-        var btnAI = MakeActionBtn("✦  IA",
-            fg: "#A78BFA", bg: Color.FromArgb(0x22, 0xA7, 0x8B, 0xFA),
-            border: Color.FromArgb(0x44, 0xA7, 0x8B, 0xFA));
+        var btnAI = ActionBtn("✦ IA", "#A78BFA",
+            Color.FromArgb(0x22, 0xA7, 0x8B, 0xFA), Color.FromArgb(0x44, 0xA7, 0x8B, 0xFA));
         btnAI.Margin = new Thickness(0, 5, 0, 0);
         btnAI.Click += (_, _) => _mainWindow.OpenAIForTicket(snap.TicketNumber);
 
-        actPanel.Children.Add(btnTimer);
-        actPanel.Children.Add(btnAI);
+        actions.Children.Add(btnTimer);
+        actions.Children.Add(btnAI);
 
         return card;
     }
 
-    // ── Helpers visuais ───────────────────────────────────────────────────────
-
-    private static Button MakeActionBtn(string label, string fg, Color bg, Color border) => new()
+    // Helpers
+    private static Button ActionBtn(string label, string fgHex, Color bg, Color border)
     {
-        Content = label,
-        FontFamily = new FontFamily("Segoe UI Semibold"),
-        FontSize = 11,
-        FontWeight = FontWeights.SemiBold,
-        Background = new SolidColorBrush(bg),
-        Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(fg)),
-        BorderBrush = new SolidColorBrush(border),
-        BorderThickness = new Thickness(1),
-        Cursor = Cursors.Hand,
-        Padding = new Thickness(10, 4, 10, 4),
-    };
+        var btn = new Button
+        {
+            Content = label,
+            FontFamily = new FontFamily("Segoe UI Semibold"),
+            FontSize = 11,
+            Background = new SolidColorBrush(bg),
+            Foreground = B(fgHex),
+            BorderBrush = new SolidColorBrush(border),
+            BorderThickness = new Thickness(1),
+            Cursor = Cursors.Hand,
+            Padding = new Thickness(12, 5, 12, 5),
+            MinWidth = 76,
+        };
+        btn.MouseEnter += (_, _) => btn.Background = new SolidColorBrush(
+            Color.FromArgb((byte)Math.Min(bg.A + 0x28, 0xFF), bg.R, bg.G, bg.B));
+        btn.MouseLeave += (_, _) => btn.Background = new SolidColorBrush(bg);
+        return btn;
+    }
 
-    private static Border MakeBadge(string text, string fg, string bg)
+    private static Border Badge(string text, string fgHex, string bgHex)
     {
-        var fgColor = (Color)ColorConverter.ConvertFromString(fg);
-        var bgColor = (Color)ColorConverter.ConvertFromString(bg);
+        var fg = (Color)ColorConverter.ConvertFromString(fgHex);
         return new Border
         {
-            Background = new SolidColorBrush(bgColor),
+            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(bgHex)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0x55, fg.R, fg.G, fg.B)),
+            BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(20),
             Padding = new Thickness(8, 2, 8, 2),
-            Margin = new Thickness(0, 0, 4, 0),
+            Margin = new Thickness(0, 0, 5, 0),
             VerticalAlignment = VerticalAlignment.Center,
             Child = new TextBlock
             {
                 Text = text,
                 FontSize = 10.5,
                 FontWeight = FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(fgColor),
+                Foreground = new SolidColorBrush(fg),
             }
         };
     }
 
-    private static SolidColorBrush PriorityBarColor(int? code) => code switch
+    private static SolidColorBrush PriorityBarBrush(int? code) => code switch
     {
-        419500000 or 1 => new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44)),
-        2 => new SolidColorBrush(Color.FromRgb(0xF5, 0x9E, 0x0B)),
+        419500000 => new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44)),
+        1 => new SolidColorBrush(Color.FromRgb(0xF5, 0x9E, 0x0B)),
+        2 => new SolidColorBrush(Color.FromRgb(0x3B, 0x82, 0xF6)),
         3 => new SolidColorBrush(Color.FromRgb(0x22, 0xC5, 0x5E)),
         _ => new SolidColorBrush(Color.FromRgb(0x1F, 0x29, 0x37)),
+    };
+
+    private static (string label, string fg, string bg) PriorityInfo(int? code) => code switch
+    {
+        419500000 => ("Urgente", "#FCA5A5", "#3B0C0C"),
+        1 => ("Alto", "#FCD34D", "#3B2A00"),
+        2 => ("Normal", "#93C5FD", "#0C1F3A"),
+        3 => ("Baixa", "#86EFAC", "#0A2010"),
+        _ => ("—", "#4B5563", "#0F1520"),
     };
 
     private static (string label, string fg, string bg) StatusInfo(int code) => code switch
     {
         100000000 => ("Novo", "#93C5FD", "#0C1F3A"),
-        4 => ("Aguardando Fila", "#6B7280", "#0F1520"),
+        4 => ("Aguard. Fila", "#6B7280", "#0F1520"),
         1 => ("Em Atendimento", "#86EFAC", "#0A2010"),
         419500000 => ("Aguard. Cliente", "#FCD34D", "#3B2A00"),
         3 => ("Em Aprovação", "#A78BFA", "#1E1245"),
@@ -436,35 +428,35 @@ public partial class DashboardView : Page
         _ => ($"St.{code}", "#374151", "#0F1520"),
     };
 
-    private static SolidColorBrush Brush(string hex)
+    private static SolidColorBrush B(string hex)
         => new((Color)ColorConverter.ConvertFromString(hex));
 
     private ContextMenu BuildContextMenu(IncidentSnapshot snap)
     {
         var menu = new ContextMenu();
 
-        var itemTimer = new MenuItem { Header = $"Timer ▶ — {snap.TicketNumber}" };
-        itemTimer.Click += (_, _) => _mainWindow.QuickStartTimer(snap.TicketNumber, snap.Title);
-        menu.Items.Add(itemTimer);
+        var mTimer = new MenuItem { Header = $"▶ Timer — {snap.TicketNumber}" };
+        mTimer.Click += (_, _) => _mainWindow.QuickStartTimer(snap.TicketNumber, snap.Title);
+        menu.Items.Add(mTimer);
 
-        var itemAI = new MenuItem { Header = "✦ Analisar com IA" };
-        itemAI.Click += (_, _) => _mainWindow.OpenAIForTicket(snap.TicketNumber);
-        menu.Items.Add(itemAI);
+        var mAI = new MenuItem { Header = "✦ Analisar com IA" };
+        mAI.Click += (_, _) => _mainWindow.OpenAIForTicket(snap.TicketNumber);
+        menu.Items.Add(mAI);
 
         menu.Items.Add(new Separator());
 
-        var itemCopy = new MenuItem { Header = "📋 Copiar número" };
-        itemCopy.Click += (_, _) => System.Windows.Clipboard.SetText(snap.TicketNumber);
-        menu.Items.Add(itemCopy);
+        var mCopy = new MenuItem { Header = "📋 Copiar número" };
+        mCopy.Click += (_, _) => System.Windows.Clipboard.SetText(snap.TicketNumber);
+        menu.Items.Add(mCopy);
 
         if (!string.IsNullOrEmpty(snap.BzpUrl))
         {
-            var itemCRM = new MenuItem { Header = "🔗 Abrir no Dynamics" };
+            var mCrm = new MenuItem { Header = "🔗 Abrir no Dynamics" };
             var url = snap.BzpUrl;
-            itemCRM.Click += (_, _) =>
+            mCrm.Click += (_, _) =>
                 System.Diagnostics.Process.Start(
                     new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
-            menu.Items.Add(itemCRM);
+            menu.Items.Add(mCrm);
         }
 
         if (!string.IsNullOrEmpty(snap.BzMotivoStatus))
@@ -479,8 +471,6 @@ public partial class DashboardView : Page
 
         return menu;
     }
-
-    // ── Eventos da UI ─────────────────────────────────────────────────────────
 
     private void BtnRefresh_Click(object sender, RoutedEventArgs e)
         => App.Services.GetRequiredService<MainViewModel>().RefreshCommand.Execute(null);

@@ -78,6 +78,19 @@ public class StorageService : IDisposable
             );
             CREATE INDEX IF NOT EXISTS idx_alerts_incident ON alert_history(incident_id);
             CREATE INDEX IF NOT EXISTS idx_te_ticket       ON time_entries(ticket_id);
+            CREATE TABLE IF NOT EXISTS todos (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                title       TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                category    TEXT DEFAULT 'Geral',
+                priority    INTEGER DEFAULT 2,
+                done        INTEGER DEFAULT 0,
+                created_at  TEXT NOT NULL,
+                due_date    TEXT,
+                done_at     TEXT,
+                ticket_id   TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_todos_done ON todos(done);
         ");
 
         foreach (var sql in new[]
@@ -368,6 +381,39 @@ public class StorageService : IDisposable
         }
     }
 
+    public List<TimeEntry> GetEntriesByPeriod(DateTime from, DateTime to)
+    {
+        var fromStr = from.ToString("yyyy-MM-dd");
+        var toStr = to.ToString("yyyy-MM-dd");
+        lock (_lock)
+        {
+            using var conn = Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                SELECT id,ticket_id,title,start_time,end_time,duration,is_active
+                FROM time_entries
+                WHERE date(start_time) >= @from AND date(start_time) <= @to
+                ORDER BY start_time";
+            cmd.Parameters.AddWithValue("@from", fromStr);
+            cmd.Parameters.AddWithValue("@to", toStr);
+            return ReadEntries(cmd);
+        }
+    }
+
+    public List<TimeEntry> GetAllEntries()
+    {
+        lock (_lock)
+        {
+            using var conn = Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                SELECT id,ticket_id,title,start_time,end_time,duration,is_active
+                FROM time_entries
+                ORDER BY start_time";
+            return ReadEntries(cmd);
+        }
+    }
+
     // ── Helpers internos ──────────────────────────────────────────────────────
 
     private SqliteConnection Open()
@@ -424,9 +470,108 @@ public class StorageService : IDisposable
     private static string UtcNow() => DateTime.UtcNow.ToString("o");
 
     public void Dispose() { }
-}
 
 // ── Extension helpers ─────────────────────────────────────────────────────────
+
+    // ── TODO CRUD ─────────────────────────────────────────────────────────────
+
+    public List<Core.Models.Todo.TodoItem> GetAllTodos()
+    {
+        lock (_lock)
+        {
+            using var conn = Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT * FROM todos ORDER BY done ASC, priority ASC, created_at DESC";
+            return ReadTodos(cmd);
+        }
+    }
+
+    public Core.Models.Todo.TodoItem SaveTodo(Core.Models.Todo.TodoItem item)
+    {
+        lock (_lock)
+        {
+            using var conn = Open();
+            if (item.Id == 0)
+            {
+                conn.Execute(@"
+                    INSERT INTO todos (title,description,category,priority,done,created_at,due_date,done_at,ticket_id)
+                    VALUES (@title,@desc,@cat,@pri,@done,@created,@due,@doneat,@ticket)",
+                    ("@title", item.Title),
+                    ("@desc", item.Description),
+                    ("@cat", item.Category),
+                    ("@pri", item.Priority),
+                    ("@done", item.Done ? 1 : 0),
+                    ("@created", item.CreatedAt.ToString("o")),
+                    ("@due", item.DueDate?.ToString("o")),
+                    ("@doneat", item.DoneAt?.ToString("o")),
+                    ("@ticket", item.TicketId));
+                item.Id = (int)conn.LastInsertRowId();
+            }
+            else
+            {
+                conn.Execute(@"
+                    UPDATE todos SET title=@title, description=@desc, category=@cat,
+                        priority=@pri, done=@done, due_date=@due, done_at=@doneat, ticket_id=@ticket
+                    WHERE id=@id",
+                    ("@title", item.Title),
+                    ("@desc", item.Description),
+                    ("@cat", item.Category),
+                    ("@pri", item.Priority),
+                    ("@done", item.Done ? 1 : 0),
+                    ("@due", item.DueDate?.ToString("o")),
+                    ("@doneat", item.DoneAt?.ToString("o")),
+                    ("@ticket", item.TicketId),
+                    ("@id", item.Id));
+            }
+            return item;
+        }
+    }
+
+    public void DeleteTodo(int id)
+    {
+        lock (_lock)
+        {
+            using var conn = Open();
+            conn.Execute("DELETE FROM todos WHERE id=@id", ("@id", id));
+        }
+    }
+
+    public void ToggleTodo(int id, bool done)
+    {
+        lock (_lock)
+        {
+            using var conn = Open();
+            var doneAt = done ? DateTime.Now.ToString("o") : (object)DBNull.Value;
+            conn.Execute("UPDATE todos SET done=@done, done_at=@doneat WHERE id=@id",
+                ("@done", done ? 1 : 0),
+                ("@doneat", doneAt),
+                ("@id", id));
+        }
+    }
+
+    private static List<Core.Models.Todo.TodoItem> ReadTodos(Microsoft.Data.Sqlite.SqliteCommand cmd)
+    {
+        var list = new List<Core.Models.Todo.TodoItem>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            list.Add(new Core.Models.Todo.TodoItem
+            {
+                Id = reader.GetInt32(reader.GetOrdinal("id")),
+                Title = reader.GetString(reader.GetOrdinal("title")),
+                Description = reader.IsDBNull(reader.GetOrdinal("description")) ? "" : reader.GetString(reader.GetOrdinal("description")),
+                Category = reader.IsDBNull(reader.GetOrdinal("category")) ? "Geral" : reader.GetString(reader.GetOrdinal("category")),
+                Priority = reader.GetInt32(reader.GetOrdinal("priority")),
+                Done = reader.GetInt32(reader.GetOrdinal("done")) == 1,
+                CreatedAt = DateTime.Parse(reader.GetString(reader.GetOrdinal("created_at"))),
+                DueDate = reader.IsDBNull(reader.GetOrdinal("due_date")) ? null : DateTime.Parse(reader.GetString(reader.GetOrdinal("due_date"))),
+                DoneAt = reader.IsDBNull(reader.GetOrdinal("done_at")) ? null : DateTime.Parse(reader.GetString(reader.GetOrdinal("done_at"))),
+                TicketId = reader.IsDBNull(reader.GetOrdinal("ticket_id")) ? null : reader.GetString(reader.GetOrdinal("ticket_id")),
+            });
+        }
+        return list;
+    }
+}
 
 internal static class SqliteExtensions
 {

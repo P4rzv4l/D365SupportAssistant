@@ -22,6 +22,7 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty] private int _riscoSla = 0;
     [ObservableProperty] private int _horasEsgotadas = 0;
     [ObservableProperty] private int _novosHoje = 0;
+    [ObservableProperty] private int _semPrimeiraCom = 0;
     [ObservableProperty] private string _lastUpdated = "";
 
     // ── Filtros ───────────────────────────────────────────────────────────────
@@ -64,6 +65,7 @@ public partial class DashboardViewModel : ObservableObject
         AltaPrioridade = snapshots.Count(s => s.PriorityCode == 1);
         HorasEsgotadas = snapshots.Count(s => s.BzHorasEsgotadas);
         NovosHoje = newToday;
+        SemPrimeiraCom = snapshots.Count(s => !s.FirstResponseSent);
         LastUpdated = $"Atualizado {DateTime.Now:HH:mm:ss}";
 
         // Risco de SLA — chamados onde restam ≤ SlaWarningHours horas

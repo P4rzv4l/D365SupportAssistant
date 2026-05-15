@@ -314,6 +314,24 @@
                                        Foreground="#86EFAC"/>
                         </StackPanel>
                     </Border>
+
+                    <Border Style="{StaticResource KpiCard}" Margin="8,0,0,0">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <Ellipse Width="6" Height="6"
+                                         Fill="#F97316"
+                                         VerticalAlignment="Center"
+                                         Margin="0,0,5,0"/>
+                                <TextBlock Text="SEM 1ª COM."
+                                           FontSize="10" FontFamily="Segoe UI Semibold"
+                                           Foreground="#374151"/>
+                            </StackPanel>
+                            <TextBlock x:Name="KpiSemCom"
+                                       Text="0"
+                                       FontSize="28" FontFamily="Segoe UI Light"
+                                       Foreground="#FB923C"/>
+                        </StackPanel>
+                    </Border>
                 </WrapPanel>
 
                 <!-- Ações direita -->

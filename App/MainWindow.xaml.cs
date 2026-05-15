@@ -21,9 +21,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DashboardViewModel _dashVm;
     private readonly AlertsViewModel _alertsVm;
     private readonly TrackerViewModel _trackerVm;
+    private readonly TrackerHistoryViewModel _trackerHistoryVm;
     private readonly AIViewModel _aiVm;
     private readonly IncidentsViewModel _incidentsVm;
     private readonly WebResourcesViewModel _webResourcesVm;
+    private readonly TodoViewModel _todoVm;
     private readonly IDataverseService _dataverse;
     private string _userName = "Carregando...";
     public string UserName
@@ -44,21 +46,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         DashboardViewModel dashVm,
         AlertsViewModel alertsVm,
         TrackerViewModel trackerVm,
+        TrackerHistoryViewModel trackerHistoryVm,
         AIViewModel aiVm,
         IncidentsViewModel incidentsVm,
         WebResourcesViewModel webResourcesVm,
+        TodoViewModel todoVm,
         IDataverseService dataverse)
     {
         InitializeComponent();
+
+        // Define ícone via caminho absoluto (evita case-sensitivity do pack URI)
+        try
+        {
+            var iconPath = System.IO.Path.Combine(AppContext.BaseDirectory, "App", "Assets", "logo-roxo.ico");
+            if (System.IO.File.Exists(iconPath))
+                Icon = new System.Windows.Media.Imaging.BitmapImage(new Uri(iconPath));
+        }
+        catch { }
 
         DataContext = this;
         _vm = vm;
         _dashVm = dashVm;
         _alertsVm = alertsVm;
         _trackerVm = trackerVm;
+        _trackerHistoryVm = trackerHistoryVm;
         _aiVm = aiVm;
         _incidentsVm = incidentsVm;
         _webResourcesVm = webResourcesVm;
+        _todoVm = todoVm;
 
         _vm.DataRefreshed += OnDataRefreshed;
         _vm.MonitorError += OnMonitorError;
@@ -101,10 +116,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 "Dashboard" => new DashboardView(_dashVm, _trackerVm, this),
                 "Incidents" => new IncidentsView(_incidentsVm),
-                "Tracker" => new TrackerView(_trackerVm),
+                "Tracker" => new TrackerView(_trackerVm, _trackerHistoryVm),
+                "TrackerHistory" => new TrackerHistoryView(_trackerHistoryVm),
                 "Alerts" => new AlertsView(_alertsVm),
                 "AI" => new AIView(_aiVm),
                 "Tools" => new ToolsView(_webResourcesVm),
+                "Todo" => new TodoView(_todoVm),
                 "Vault" => new VaultView(
                     App.Services.GetRequiredService<VaultViewModel>()),
                 "Settings" => new SettingsView(

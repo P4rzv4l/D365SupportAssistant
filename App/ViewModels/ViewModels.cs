@@ -2,6 +2,7 @@
 //  AlertsViewModel.cs, TrackerViewModel.cs, AIViewModel.cs, SettingsViewModel.cs
 // =============================================================================
 
+using ClosedXML.Excel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using D365Assistant.Core.Models.Alerts;
@@ -246,6 +247,256 @@ public partial class TrackerViewModel : ObservableObject
 
         var t = TimeSpan.FromSeconds(totalSec);
         DayTotal = t.Hours > 0 ? $"{t.Hours}h {t.Minutes:D2}m" : $"{t.Minutes}m {t.Seconds:D2}s";
+    }
+}
+
+// ── Tracker History ───────────────────────────────────────────────────────────
+
+public partial class TrackerHistoryViewModel : ObservableObject
+{
+    private readonly StorageService _storage;
+    private List<TimeEntry> _rawEntries = [];
+
+    public enum PeriodKind { Day, Week, Month, Year }
+
+    [ObservableProperty] private PeriodKind _selectedPeriod = PeriodKind.Day;
+    [ObservableProperty] private DateTime _referenceDate = DateTime.Today;
+    [ObservableProperty] private string _periodLabel = "";
+    [ObservableProperty] private string _totalFormatted = "0h 00m";
+    [ObservableProperty] private string _exportStatus = "";
+    [ObservableProperty] private bool _hasData = false;
+
+    // Grouped rows shown in the UI
+    public ObservableCollection<TimeEntryGroup> Groups { get; } = [];
+
+    public TrackerHistoryViewModel(StorageService storage)
+    {
+        _storage = storage;
+        Refresh();
+    }
+
+    // ── Navigation ────────────────────────────────────────────────────────────
+
+    [RelayCommand] public void Previous() { Shift(-1); Refresh(); }
+    [RelayCommand] public void Next() { Shift(+1); Refresh(); }
+    [RelayCommand] public void Today() { ReferenceDate = DateTime.Today; Refresh(); }
+
+    private void Shift(int delta)
+    {
+        ReferenceDate = SelectedPeriod switch
+        {
+            PeriodKind.Day => ReferenceDate.AddDays(delta),
+            PeriodKind.Week => ReferenceDate.AddDays(delta * 7),
+            PeriodKind.Month => ReferenceDate.AddMonths(delta),
+            PeriodKind.Year => ReferenceDate.AddYears(delta),
+            _ => ReferenceDate
+        };
+    }
+
+    partial void OnSelectedPeriodChanged(PeriodKind value) => Refresh();
+
+    // ── Data Loading ──────────────────────────────────────────────────────────
+
+    public void Refresh()
+    {
+        var (from, to) = GetRange();
+        PeriodLabel = FormatLabel(from, to);
+        _rawEntries = _storage.GetEntriesByPeriod(from, to);
+
+        Groups.Clear();
+
+        // Group by date then by ticket
+        var byDate = _rawEntries
+            .GroupBy(e => e.Start.Date)
+            .OrderByDescending(g => g.Key);
+
+        foreach (var dayGroup in byDate)
+        {
+            var dayTotal = dayGroup.Sum(e => e.Seconds);
+            var dayLabel = dayGroup.Key == DateTime.Today
+                ? "Hoje"
+                : dayGroup.Key == DateTime.Today.AddDays(-1)
+                ? "Ontem"
+                : dayGroup.Key.ToString("ddd, dd/MM/yyyy");
+
+            var byTicket = dayGroup
+                .GroupBy(e => e.TicketId)
+                .Select(tg => new TicketSummary(
+                    tg.Key,
+                    tg.FirstOrDefault()?.Title ?? "",
+                    tg.Sum(e => e.Seconds),
+                    tg.OrderBy(e => e.Start).ToList()))
+                .OrderByDescending(t => t.TotalSeconds)
+                .ToList();
+
+            Groups.Add(new TimeEntryGroup(dayLabel, dayGroup.Key, dayTotal, byTicket));
+        }
+
+        var grandTotal = _rawEntries.Sum(e => e.Seconds);
+        var t = TimeSpan.FromSeconds(grandTotal);
+        TotalFormatted = t.TotalHours >= 1
+            ? $"{(int)t.TotalHours}h {t.Minutes:D2}m"
+            : $"{t.Minutes}m {t.Seconds:D2}s";
+
+        HasData = Groups.Count > 0;
+    }
+
+    // ── Export ────────────────────────────────────────────────────────────────
+
+    [RelayCommand]
+    public void ExportXlsx()
+    {
+        try
+        {
+            var (from, to) = GetRange();
+            var safePeriod = PeriodLabel.Replace("/", "-").Replace(":", "-");
+            var fileName = $"TimeTracker_{safePeriod}.xlsx";
+
+            var dlg = new Microsoft.Win32.SaveFileDialog
+            {
+                FileName = fileName,
+                DefaultExt = ".xlsx",
+                Filter = "Excel (*.xlsx)|*.xlsx",
+                InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop)
+            };
+
+            if (dlg.ShowDialog() != true) return;
+
+            using var workbook = new XLWorkbook();
+            var ws = workbook.Worksheets.Add("Time Tracker");
+
+            // ── Header ────────────────────────────────────────────────────────
+            ws.Cell(1, 1).Value = "Data";
+            ws.Cell(1, 2).Value = "Ticket";
+            ws.Cell(1, 3).Value = "Título";
+            ws.Cell(1, 4).Value = "Início";
+            ws.Cell(1, 5).Value = "Fim";
+            ws.Cell(1, 6).Value = "Duração (h)";
+            ws.Cell(1, 7).Value = "Duração (hh:mm:ss)";
+
+            var hdr = ws.Range(1, 1, 1, 7);
+            hdr.Style.Font.Bold = true;
+            hdr.Style.Fill.BackgroundColor = XLColor.FromHtml("#1D4ED8");
+            hdr.Style.Font.FontColor = XLColor.White;
+
+            // ── Rows ──────────────────────────────────────────────────────────
+            int row = 2;
+            foreach (var entry in _rawEntries.OrderBy(e => e.Start))
+            {
+                ws.Cell(row, 1).Value = entry.Start.ToString("dd/MM/yyyy");
+                ws.Cell(row, 2).Value = entry.TicketId;
+                ws.Cell(row, 3).Value = entry.Title;
+                ws.Cell(row, 4).Value = entry.Start.ToString("HH:mm:ss");
+                ws.Cell(row, 5).Value = entry.End?.ToString("HH:mm:ss") ?? "(ativo)";
+                ws.Cell(row, 6).Value = Math.Round(entry.Seconds / 3600.0, 4);
+                var ts = TimeSpan.FromSeconds(entry.Seconds);
+                ws.Cell(row, 7).Value = $"{(int)ts.TotalHours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}";
+                row++;
+            }
+
+            // ── Summary sheet ─────────────────────────────────────────────────
+            var ws2 = workbook.Worksheets.Add("Resumo por Ticket");
+            ws2.Cell(1, 1).Value = "Ticket";
+            ws2.Cell(1, 2).Value = "Título";
+            ws2.Cell(1, 3).Value = "Total (h)";
+            ws2.Cell(1, 4).Value = "Total (hh:mm:ss)";
+            ws2.Range(1, 1, 1, 4).Style.Font.Bold = true;
+            ws2.Range(1, 1, 1, 4).Style.Fill.BackgroundColor = XLColor.FromHtml("#1D4ED8");
+            ws2.Range(1, 1, 1, 4).Style.Font.FontColor = XLColor.White;
+
+            int row2 = 2;
+            var byTicket = _rawEntries
+                .GroupBy(e => e.TicketId)
+                .Select(g => new { Ticket = g.Key, Title = g.FirstOrDefault()?.Title ?? "", Secs = g.Sum(e => e.Seconds) })
+                .OrderByDescending(g => g.Secs);
+
+            foreach (var t2 in byTicket)
+            {
+                var ts2 = TimeSpan.FromSeconds(t2.Secs);
+                ws2.Cell(row2, 1).Value = t2.Ticket;
+                ws2.Cell(row2, 2).Value = t2.Title;
+                ws2.Cell(row2, 3).Value = Math.Round(t2.Secs / 3600.0, 4);
+                ws2.Cell(row2, 4).Value = $"{(int)ts2.TotalHours:D2}:{ts2.Minutes:D2}:{ts2.Seconds:D2}";
+                row2++;
+            }
+
+            ws.Columns().AdjustToContents();
+            ws2.Columns().AdjustToContents();
+            workbook.SaveAs(dlg.FileName);
+
+            ExportStatus = $"✓ Exportado para {System.IO.Path.GetFileName(dlg.FileName)}";
+        }
+        catch (Exception ex)
+        {
+            ExportStatus = $"✗ Erro: {ex.Message}";
+        }
+    }
+
+    // ── Internal accessors for TrackerView ───────────────────────────────────
+    public List<Core.Models.Time.TimeEntry> _storage_GetPeriod(DateTime from, DateTime to)
+        => _storage.GetEntriesByPeriod(from, to);
+    public List<Core.Models.Time.TimeEntry> _storage_GetAll()
+        => _storage.GetAllEntries();
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private (DateTime from, DateTime to) GetRange()
+    {
+        return SelectedPeriod switch
+        {
+            PeriodKind.Day => (ReferenceDate, ReferenceDate),
+            PeriodKind.Week => StartOfWeek(ReferenceDate),
+            PeriodKind.Month => (new DateTime(ReferenceDate.Year, ReferenceDate.Month, 1),
+                                  new DateTime(ReferenceDate.Year, ReferenceDate.Month,
+                                      DateTime.DaysInMonth(ReferenceDate.Year, ReferenceDate.Month))),
+            PeriodKind.Year => (new DateTime(ReferenceDate.Year, 1, 1),
+                                  new DateTime(ReferenceDate.Year, 12, 31)),
+            _ => (ReferenceDate, ReferenceDate)
+        };
+    }
+
+    private static (DateTime from, DateTime to) StartOfWeek(DateTime date)
+    {
+        int diff = ((int)date.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
+        var start = date.AddDays(-diff);
+        return (start, start.AddDays(6));
+    }
+
+    private string FormatLabel(DateTime from, DateTime to) => SelectedPeriod switch
+    {
+        PeriodKind.Day => from.ToString("dd/MM/yyyy"),
+        PeriodKind.Week => $"{from:dd/MM} – {to:dd/MM/yyyy}",
+        PeriodKind.Month => from.ToString("MMMM yyyy", new System.Globalization.CultureInfo("pt-BR")),
+        PeriodKind.Year => from.Year.ToString(),
+        _ => from.ToString("dd/MM/yyyy")
+    };
+}
+
+public record TicketSummary(string TicketId, string Title, int TotalSeconds, List<TimeEntry> Entries)
+{
+    public string Formatted
+    {
+        get
+        {
+            var t = TimeSpan.FromSeconds(TotalSeconds);
+            return t.TotalHours >= 1 ? $"{(int)t.TotalHours}h {t.Minutes:D2}m" : $"{t.Minutes}m {t.Seconds:D2}s";
+        }
+    }
+}
+
+public class TimeEntryGroup(string label, DateTime date, int totalSeconds, List<TicketSummary> tickets)
+{
+    public string Label { get; } = label;
+    public DateTime Date { get; } = date;
+    public int TotalSeconds { get; } = totalSeconds;
+    public List<TicketSummary> Tickets { get; } = tickets;
+    public string TotalFormatted
+    {
+        get
+        {
+            var t = TimeSpan.FromSeconds(TotalSeconds);
+            return t.TotalHours >= 1 ? $"{(int)t.TotalHours}h {t.Minutes:D2}m" : $"{t.Minutes}m {t.Seconds:D2}s";
+        }
     }
 }
 
