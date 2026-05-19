@@ -27,8 +27,11 @@ public partial class DashboardViewModel : ObservableObject
 
     // ── Filtros ───────────────────────────────────────────────────────────────
     [ObservableProperty] private string _searchText = "";
-    [ObservableProperty] private string _priFilter = "Todos";
+    [ObservableProperty] private string _priFilter = "Todas";
     [ObservableProperty] private string _statusFilter = "Todos";
+    [ObservableProperty] private string _activeTab = "Todos os Chamados";
+
+    partial void OnActiveTabChanged(string _) => ApplyFilter();
 
     // ── Lista de chamados (ObservableCollection atualiza a UI automaticamente) ─
     public ObservableCollection<IncidentSnapshot> Incidents { get; } = [];
@@ -102,11 +105,26 @@ public partial class DashboardViewModel : ObservableObject
         {
             ["Em Atendimento"] = 1,
             ["Aguardando Fila"] = 4,
+            ["Aguard. Cliente"] = 419500000,
             ["Aguard. cliente"] = 419500000,
             ["Impeditivo"] = 2,
+            ["Resolvido"] = 5,
+            ["Cancelado"] = 6,
         };
 
         var filtered = _allSnapshots.AsEnumerable();
+
+        // Tab filter
+        filtered = ActiveTab switch
+        {
+            "Meus Chamados" => filtered.Where(s => s.StatusCode == 1),
+            "Em Atendimento" => filtered.Where(s => s.StatusCode == 1),
+            "Aguardando Cliente" => filtered.Where(s => s.StatusCode == 419500000),
+            "Aguardando Terceiros" => filtered.Where(s => s.StatusCode == 121360001),
+            "Resolvidos" => filtered.Where(s => s.StatusCode == 5),
+            "Cancelados" => filtered.Where(s => s.StatusCode == 6),
+            _ => filtered,
+        };
 
         // Busca textual
         if (!string.IsNullOrEmpty(q))
@@ -116,7 +134,7 @@ public partial class DashboardViewModel : ObservableObject
                 (s.CustomerDisplayName ?? "").ToLower().Contains(q));
 
         // Filtro prioridade
-        if (PriFilter != "Todos" && priMap.TryGetValue(PriFilter, out var priCode))
+        if (PriFilter != "Todas" && PriFilter != "Todos" && priMap.TryGetValue(PriFilter, out var priCode))
             filtered = filtered.Where(s => s.PriorityCode == priCode);
 
         // Filtro status
