@@ -482,6 +482,38 @@ public partial class TrackerView : Page
         input.KeyDown += (_, e) => { if (e.Key == Key.Enter) _vm.StartCommand.Execute(null); };
         leftStack.Children.Add(input);
 
+        // Description input
+        var descLabel = new TextBlock
+        {
+            Text = "Descrição (opcional)",
+            FontSize = 10,
+            FontWeight = FontWeights.Bold,
+            Foreground = new SolidColorBrush(CMuted),
+            Margin = new Thickness(0, 10, 0, 5),
+        };
+        leftStack.Children.Add(descLabel);
+
+        var descInput = new TextBox
+        {
+            Background = new SolidColorBrush(CBg),
+            Foreground = new SolidColorBrush(CText),
+            BorderBrush = new SolidColorBrush(CBorder),
+            BorderThickness = new Thickness(1),
+            FontSize = 12,
+            Padding = new Thickness(12, 8, 12, 8),
+            CaretBrush = new SolidColorBrush(CAccent),
+            TextWrapping = TextWrapping.Wrap,
+            AcceptsReturn = false,
+            MaxLength = 500,
+        };
+        descInput.SetBinding(TextBox.TextProperty, new System.Windows.Data.Binding("DescriptionInput")
+        {
+            Source = _vm,
+            Mode = System.Windows.Data.BindingMode.TwoWay,
+            UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged,
+        });
+        leftStack.Children.Add(descInput);
+
         // Recents chips
         var recentRow = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
         recentRow.Children.Add(new TextBlock
@@ -893,6 +925,26 @@ public partial class TrackerView : Page
                     });
                 leftCol.Children.Add(metaRow);
 
+                // Descriptions from sessions
+                var descriptions = dayGroup
+                    .Where(e => e.TicketId == ticket && !string.IsNullOrWhiteSpace(e.Description))
+                    .Select(e => e.Description.Trim())
+                    .Distinct()
+                    .ToList();
+                if (descriptions.Count > 0)
+                {
+                    var descText = string.Join(" · ", descriptions);
+                    leftCol.Children.Add(new TextBlock
+                    {
+                        Text = descText.Length > 120 ? descText[..120] + "…" : descText,
+                        FontSize = 10,
+                        Foreground = new SolidColorBrush(Color.FromRgb(0x6E, 0x76, 0x88)),
+                        Margin = new Thickness(0, 3, 0, 0),
+                        TextWrapping = TextWrapping.Wrap,
+                        FontStyle = FontStyles.Italic,
+                    });
+                }
+
                 // Progress bar
                 var barTrack = new Border
                 {
@@ -976,13 +1028,13 @@ public partial class TrackerView : Page
         };
 
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("Ticket,Título,Início,Fim,Duração (hh:mm:ss)");
+        sb.AppendLine("Ticket,Título,Descrição,Início,Fim,Duração (hh:mm:ss)");
         foreach (var e in entries)
         {
             var ts = TimeSpan.FromSeconds(e.Seconds);
             sb.AppendLine(
-                $"\"{e.TicketId}\",\"{e.Title.Replace("\"", "\"\"")}\",\"{e.Start:HH:mm:ss}\"," +
-                $"\"{e.End?.ToString("HH:mm:ss") ?? ""}\",\"{(int)ts.TotalHours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}\"");
+                $"\"{e.TicketId}\",\"{e.Title.Replace("\"", "\"\"")}\",\"{e.Description.Replace("\"", "\"\"")}\"," +
+                $"\"{e.Start:HH:mm:ss}\",\"{e.End?.ToString("HH:mm:ss") ?? ""}\",\"{(int)ts.TotalHours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}\"");
         }
         System.IO.File.WriteAllText(dlg.FileName, sb.ToString(), System.Text.Encoding.UTF8);
     }

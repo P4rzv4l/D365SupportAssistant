@@ -103,6 +103,7 @@ public class StorageService : IDisposable
             "ALTER TABLE incidents ADD COLUMN bz_total_horas REAL",
             "ALTER TABLE incidents ADD COLUMN customer_name TEXT",
             "ALTER TABLE incidents ADD COLUMN case_type_code INTEGER",
+            "ALTER TABLE time_entries ADD COLUMN description TEXT DEFAULT ''",
         })
         {
             try { conn.Execute(sql); }
@@ -306,7 +307,7 @@ public class StorageService : IDisposable
             using var conn = Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
-                SELECT id,ticket_id,title,start_time,end_time,duration,is_active
+                SELECT id,ticket_id,title,start_time,end_time,duration,is_active,COALESCE(description,'')
                 FROM time_entries WHERE date(start_time)=@d ORDER BY start_time";
             cmd.Parameters.AddWithValue("@d", today);
             return ReadEntries(cmd);
@@ -329,7 +330,7 @@ public class StorageService : IDisposable
         }
     }
 
-    public int StartTimer(string ticketId, string title)
+    public int StartTimer(string ticketId, string title, string description = "")
     {
         lock (_lock)
         {
@@ -337,10 +338,11 @@ public class StorageService : IDisposable
             conn.Execute("UPDATE time_entries SET is_active=0 WHERE is_active=1");
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
-                INSERT INTO time_entries (ticket_id,title,start_time,duration,is_active)
-                VALUES (@t,@ti,@st,0,1)";
+                INSERT INTO time_entries (ticket_id,title,description,start_time,duration,is_active)
+                VALUES (@t,@ti,@desc,@st,0,1)";
             cmd.Parameters.AddWithValue("@t", ticketId);
             cmd.Parameters.AddWithValue("@ti", title);
+            cmd.Parameters.AddWithValue("@desc", description);
             cmd.Parameters.AddWithValue("@st", DateTime.Now.ToString("o"));
             cmd.ExecuteNonQuery();
             return (int)conn.LastInsertRowId();
@@ -368,6 +370,16 @@ public class StorageService : IDisposable
         }
     }
 
+    public void UpdateDescription(int entryId, string description)
+    {
+        lock (_lock)
+        {
+            using var conn = Open();
+            conn.Execute("UPDATE time_entries SET description=@desc WHERE id=@id",
+                ("@desc", description), ("@id", entryId));
+        }
+    }
+
     public TimeEntry? GetActiveEntry()
     {
         lock (_lock)
@@ -375,7 +387,7 @@ public class StorageService : IDisposable
             using var conn = Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
-                SELECT id,ticket_id,title,start_time,end_time,duration,is_active
+                SELECT id,ticket_id,title,start_time,end_time,duration,is_active,COALESCE(description,'')
                 FROM time_entries WHERE is_active=1 LIMIT 1";
             return ReadEntries(cmd).FirstOrDefault();
         }
@@ -390,7 +402,7 @@ public class StorageService : IDisposable
             using var conn = Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
-                SELECT id,ticket_id,title,start_time,end_time,duration,is_active
+                SELECT id,ticket_id,title,start_time,end_time,duration,is_active,COALESCE(description,'')
                 FROM time_entries
                 WHERE date(start_time) >= @from AND date(start_time) <= @to
                 ORDER BY start_time";
@@ -407,7 +419,7 @@ public class StorageService : IDisposable
             using var conn = Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
-                SELECT id,ticket_id,title,start_time,end_time,duration,is_active
+                SELECT id,ticket_id,title,start_time,end_time,duration,is_active,COALESCE(description,'')
                 FROM time_entries
                 ORDER BY start_time";
             return ReadEntries(cmd);
@@ -463,6 +475,7 @@ public class StorageService : IDisposable
                 End = r.IsDBNull(4) ? null : DateTime.Parse(r.GetString(4)),
                 Seconds = r.GetInt32(5),
                 IsActive = r.GetInt32(6) == 1,
+                Description = r.FieldCount > 7 && !r.IsDBNull(7) ? r.GetString(7) : "",
             });
         return list;
     }
@@ -471,7 +484,7 @@ public class StorageService : IDisposable
 
     public void Dispose() { }
 
-// ── Extension helpers ─────────────────────────────────────────────────────────
+    // ── Extension helpers ─────────────────────────────────────────────────────────
 
     // ── TODO CRUD ─────────────────────────────────────────────────────────────
 

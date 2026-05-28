@@ -11,6 +11,7 @@ namespace D365Assistant.Core.Models.Time
         public int Id { get; set; }
         public string TicketId { get; set; } = "";
         public string Title { get; set; } = "";
+        public string Description { get; set; } = "";
         public DateTime Start { get; set; }
         public DateTime? End { get; set; }
         public int Seconds { get; set; }

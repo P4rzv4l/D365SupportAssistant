@@ -84,12 +84,14 @@ public partial class TrackerViewModel : ObservableObject
     [ObservableProperty] private string _timerDisplay = "00:00:00";
     [ObservableProperty] private string _activeTicket = "";
     [ObservableProperty] private string _activeTitle = "";
+    [ObservableProperty] private string _activeDescription = "";
     [ObservableProperty] private string _timerColor = "#484F58";
     [ObservableProperty] private string _statusPill = "PARADO";
     [ObservableProperty] private string _statusPillColor = "#F85149";
     [ObservableProperty] private string _dayTotal = "0h 00m";
     [ObservableProperty] private bool _isRunning = false;
     [ObservableProperty] private string _ticketInput = "";
+    [ObservableProperty] private string _descriptionInput = "";
 
     public ObservableCollection<TimeEntry> TodayEntries { get; } = [];
     public ObservableCollection<string> RecentTickets { get; } = [];
@@ -112,6 +114,8 @@ public partial class TrackerViewModel : ObservableObject
             _elapsedSeconds = active.Seconds;
             ActiveTicket = active.TicketId;
             ActiveTitle = active.Title;
+            ActiveDescription = active.Description;
+            DescriptionInput = active.Description;
             StartUiTimer();
         }
 
@@ -128,9 +132,11 @@ public partial class TrackerViewModel : ObservableObject
 
         StopCurrent();
         _elapsedSeconds = 0;
-        _activeEntryId = _storage.StartTimer(ticket, "");
+        var desc = DescriptionInput.Trim();
+        _activeEntryId = _storage.StartTimer(ticket, "", desc);
         ActiveTicket = ticket;
         ActiveTitle = "";
+        ActiveDescription = desc;
         StartUiTimer();
     }
 
@@ -166,6 +172,8 @@ public partial class TrackerViewModel : ObservableObject
         _elapsedSeconds = 0;
         ActiveTicket = "";
         ActiveTitle = "";
+        ActiveDescription = "";
+        DescriptionInput = "";
         TimerDisplay = "00:00:00";
         StatusPill = "PARADO";
         StatusPillColor = "#F85149";
@@ -180,8 +188,10 @@ public partial class TrackerViewModel : ObservableObject
         if (string.IsNullOrEmpty(ticket)) { Start(); return; }
         StopCurrent();
         _elapsedSeconds = 0;
-        _activeEntryId = _storage.StartTimer(ticket, "");
+        var desc = DescriptionInput.Trim();
+        _activeEntryId = _storage.StartTimer(ticket, "", desc);
         ActiveTicket = ticket;
+        ActiveDescription = desc;
         StartUiTimer();
         RefreshDayList();
     }
@@ -369,12 +379,13 @@ public partial class TrackerHistoryViewModel : ObservableObject
             ws.Cell(1, 1).Value = "Data";
             ws.Cell(1, 2).Value = "Ticket";
             ws.Cell(1, 3).Value = "Título";
-            ws.Cell(1, 4).Value = "Início";
-            ws.Cell(1, 5).Value = "Fim";
-            ws.Cell(1, 6).Value = "Duração (h)";
-            ws.Cell(1, 7).Value = "Duração (hh:mm:ss)";
+            ws.Cell(1, 4).Value = "Descrição";
+            ws.Cell(1, 5).Value = "Início";
+            ws.Cell(1, 6).Value = "Fim";
+            ws.Cell(1, 7).Value = "Duração (h)";
+            ws.Cell(1, 8).Value = "Duração (hh:mm:ss)";
 
-            var hdr = ws.Range(1, 1, 1, 7);
+            var hdr = ws.Range(1, 1, 1, 8);
             hdr.Style.Font.Bold = true;
             hdr.Style.Fill.BackgroundColor = XLColor.FromHtml("#1D4ED8");
             hdr.Style.Font.FontColor = XLColor.White;
@@ -386,11 +397,12 @@ public partial class TrackerHistoryViewModel : ObservableObject
                 ws.Cell(row, 1).Value = entry.Start.ToString("dd/MM/yyyy");
                 ws.Cell(row, 2).Value = entry.TicketId;
                 ws.Cell(row, 3).Value = entry.Title;
-                ws.Cell(row, 4).Value = entry.Start.ToString("HH:mm:ss");
-                ws.Cell(row, 5).Value = entry.End?.ToString("HH:mm:ss") ?? "(ativo)";
-                ws.Cell(row, 6).Value = Math.Round(entry.Seconds / 3600.0, 4);
+                ws.Cell(row, 4).Value = entry.Description;
+                ws.Cell(row, 5).Value = entry.Start.ToString("HH:mm:ss");
+                ws.Cell(row, 6).Value = entry.End?.ToString("HH:mm:ss") ?? "(ativo)";
+                ws.Cell(row, 7).Value = Math.Round(entry.Seconds / 3600.0, 4);
                 var ts = TimeSpan.FromSeconds(entry.Seconds);
-                ws.Cell(row, 7).Value = $"{(int)ts.TotalHours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}";
+                ws.Cell(row, 8).Value = $"{(int)ts.TotalHours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}";
                 row++;
             }
 
