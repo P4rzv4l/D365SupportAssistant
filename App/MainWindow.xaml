@@ -156,6 +156,12 @@
                             <TextBlock Text="Tarefas" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
+                    <Button Tag="Notes" Style="{StaticResource SidebarBtn}" Click="NavBtn_Click" Margin="0,0,0,2">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="📝" FontSize="14" Margin="0,0,8,0"/>
+                            <TextBlock Text="Notas" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
                     <Button Tag="Settings" Style="{StaticResource SidebarBtn}" Click="NavBtn_Click" Margin="0,0,0,2">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="⚙️" FontSize="14" Margin="0,0,8,0"/>

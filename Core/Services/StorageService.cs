@@ -91,6 +91,18 @@ public class StorageService : IDisposable
                 ticket_id   TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_todos_done ON todos(done);
+            CREATE TABLE IF NOT EXISTS notes (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                title        TEXT NOT NULL DEFAULT 'Nova nota',
+                content      TEXT NOT NULL DEFAULT '',
+                incident_id  TEXT,
+                incident_title TEXT,
+                ticket_number  TEXT,
+                color        TEXT NOT NULL DEFAULT '#1E2530',
+                created_at   TEXT NOT NULL,
+                updated_at   TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_notes_incident ON notes(incident_id);
         ");
 
         foreach (var sql in new[]
@@ -483,6 +495,124 @@ public class StorageService : IDisposable
     private static string UtcNow() => DateTime.UtcNow.ToString("o");
 
     public void Dispose() { }
+
+    // ── Notes CRUD ────────────────────────────────────────────────────────────────
+
+    public List<Core.Models.Notes.Note> GetAllNotes()
+    {
+        lock (_lock)
+        {
+            using var conn = Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT id,title,content,incident_id,incident_title,ticket_number,color,created_at,updated_at FROM notes ORDER BY updated_at DESC";
+            return ReadNotes(cmd);
+        }
+    }
+
+    /// <summary>
+    /// Marca como encerrado (state_code=1) todo chamado que estava ativo no banco
+    /// mas não está na lista de IDs retornados pelo Dataverse neste ciclo.
+    /// Retorna quantos foram encerrados.
+    /// </summary>
+    public int MarkClosedExcept(IEnumerable<string> activeIncidentIds)
+    {
+        var ids = activeIncidentIds.ToHashSet();
+        lock (_lock)
+        {
+            using var conn = Open();
+            using var tx = conn.BeginTransaction();
+
+            // Busca todos os que estão ativos no banco
+            using var sel = conn.CreateCommand();
+            sel.Transaction = tx;
+            sel.CommandText = "SELECT incident_id FROM incidents WHERE state_code=0";
+            var inDb = new List<string>();
+            using (var r = sel.ExecuteReader())
+                while (r.Read()) inDb.Add(r.GetString(0));
+
+            // Quem estava ativo e não voltou → encerrado
+            var toClose = inDb.Where(id => !ids.Contains(id)).ToList();
+            foreach (var id in toClose)
+            {
+                using var upd = conn.CreateCommand();
+                upd.Transaction = tx;
+                upd.CommandText = "UPDATE incidents SET state_code=1, status_code=5, last_seen_at=@now WHERE incident_id=@id";
+                upd.Parameters.AddWithValue("@now", UtcNow());
+                upd.Parameters.AddWithValue("@id", id);
+                upd.ExecuteNonQuery();
+            }
+
+            tx.Commit();
+            return toClose.Count;
+        }
+    }
+
+    public Core.Models.Notes.Note SaveNote(Core.Models.Notes.Note note)
+    {
+        lock (_lock)
+        {
+            using var conn = Open();
+            note.UpdatedAt = DateTime.Now;
+            if (note.Id == 0)
+            {
+                note.CreatedAt = DateTime.Now;
+                conn.Execute(@"
+                    INSERT INTO notes (title,content,incident_id,incident_title,ticket_number,color,created_at,updated_at)
+                    VALUES (@ti,@co,@inc,@inctitle,@tkt,@color,@ca,@ua)",
+                    ("@ti", note.Title), ("@co", note.Content),
+                    ("@inc", (object?)note.IncidentId ?? DBNull.Value),
+                    ("@inctitle", (object?)note.IncidentTitle ?? DBNull.Value),
+                    ("@tkt", (object?)note.TicketNumber ?? DBNull.Value),
+                    ("@color", note.Color),
+                    ("@ca", note.CreatedAt.ToString("o")),
+                    ("@ua", note.UpdatedAt.ToString("o")));
+                note.Id = (int)conn.LastInsertRowId();
+            }
+            else
+            {
+                conn.Execute(@"
+                    UPDATE notes SET title=@ti,content=@co,incident_id=@inc,incident_title=@inctitle,
+                        ticket_number=@tkt,color=@color,updated_at=@ua WHERE id=@id",
+                    ("@ti", note.Title), ("@co", note.Content),
+                    ("@inc", (object?)note.IncidentId ?? DBNull.Value),
+                    ("@inctitle", (object?)note.IncidentTitle ?? DBNull.Value),
+                    ("@tkt", (object?)note.TicketNumber ?? DBNull.Value),
+                    ("@color", note.Color),
+                    ("@ua", note.UpdatedAt.ToString("o")),
+                    ("@id", note.Id));
+            }
+            return note;
+        }
+    }
+
+    public void DeleteNote(int id)
+    {
+        lock (_lock)
+        {
+            using var conn = Open();
+            conn.Execute("DELETE FROM notes WHERE id=@id", ("@id", id));
+        }
+    }
+
+    private static List<Core.Models.Notes.Note> ReadNotes(SqliteCommand cmd)
+    {
+        var list = new List<Core.Models.Notes.Note>();
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+            list.Add(new Core.Models.Notes.Note
+            {
+                Id = r.GetInt32(0),
+                Title = r.IsDBNull(1) ? "Nova nota" : r.GetString(1),
+                Content = r.IsDBNull(2) ? "" : r.GetString(2),
+                IncidentId = r.IsDBNull(3) ? null : r.GetString(3),
+                IncidentTitle = r.IsDBNull(4) ? null : r.GetString(4),
+                TicketNumber = r.IsDBNull(5) ? null : r.GetString(5),
+                Color = r.IsDBNull(6) ? "#1E2530" : r.GetString(6),
+                CreatedAt = DateTime.Parse(r.GetString(7)),
+                UpdatedAt = DateTime.Parse(r.GetString(8)),
+            });
+        return list;
+    }
 
     // ── Extension helpers ─────────────────────────────────────────────────────────
 

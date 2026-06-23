@@ -58,25 +58,37 @@ public class MonitoringOrchestrator
         {
             Log.Information("═══ Iniciando ciclo [{RunId}] ═══", runId);
 
-            // 1. Busca chamados
+            // 1. Busca chamados ativos no Dataverse
             var incidents = await _dataverse.GetMyIncidentsAsync(false, ct);
             fetched = incidents.Count;
 
-            if (fetched == 0)
+            // 2. Persiste/atualiza os chamados retornados no banco
+            if (fetched > 0)
+                _storage.UpsertIncidents(incidents);
+
+            // 3. Reconcilia: chamados que estavam ativos no banco e não voltaram → encerrados
+            var activeIds = incidents.Select(i => i.IncidentId).ToHashSet();
+            var closed = _storage.MarkClosedExcept(activeIds);
+            if (closed > 0)
+                Log.Information("{Closed} chamado(s) marcado(s) como encerrado(s) neste ciclo.", closed);
+
+            if (fetched == 0 && closed == 0)
             {
                 Log.Information("Nenhum chamado ativo.");
-                RaiseCycleCompleted([], [], 0, 0);
+                RaiseCycleCompleted(_storage.GetAllSnapshots(activeOnly: false), [], 0, 0);
                 return;
             }
 
-            // 2. Avalia regras
-            var result = _engine.Run(incidents);
+            // 4. Avalia regras (somente nos ativos)
+            var result = fetched > 0
+                ? _engine.Run(incidents)
+                : new EngineResult([], 0, new HashSet<string>(), 0, []);
 
-            // 3. Enriquece os alertas mais críticos com IA (em paralelo, máx 3)
+            // 5. Enriquece os alertas mais críticos com IA (em paralelo, máx 3)
             if (_cfg.AI.Enabled && result.HasAlerts)
                 await EnrichWithAiAsync(result.Alerts, incidents, ct);
 
-            // 4. Notifica e persiste alertas
+            // 6. Notifica e persiste alertas
             if (result.HasAlerts)
             {
                 await _notifier.SendAllAsync(result.AlertsByPriority, ct);
@@ -86,8 +98,8 @@ public class MonitoringOrchestrator
                     _storage.RecordAlert(alert.IncidentId, alert.Type, alert.Message);
             }
 
-            // 5. Dispara evento com snapshots atualizados
-            var snapshots = _storage.GetAllSnapshots(activeOnly: true);
+            // 7. Dispara evento com todos os snapshots (ativos + encerrados)
+            var snapshots = _storage.GetAllSnapshots(activeOnly: false);
             var elapsed = (DateTime.UtcNow - start).TotalSeconds;
 
             Log.Information(

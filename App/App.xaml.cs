@@ -95,6 +95,7 @@ public partial class App : Application
                 services.AddTransient<VaultViewModel>();
                 services.AddTransient<WebResourcesViewModel>();
                 services.AddSingleton<TodoViewModel>();
+                services.AddSingleton<NotesViewModel>();
 
                 // Janela principal
                 services.AddSingleton<MainWindow>();

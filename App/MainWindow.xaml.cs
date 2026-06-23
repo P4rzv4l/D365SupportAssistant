@@ -26,6 +26,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly IncidentsViewModel _incidentsVm;
     private readonly WebResourcesViewModel _webResourcesVm;
     private readonly TodoViewModel _todoVm;
+    private readonly NotesViewModel _notesVm;
     private readonly IDataverseService _dataverse;
     private string _userName = "Carregando...";
     public string UserName
@@ -51,6 +52,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         IncidentsViewModel incidentsVm,
         WebResourcesViewModel webResourcesVm,
         TodoViewModel todoVm,
+        NotesViewModel notesVm,
         IDataverseService dataverse)
     {
         InitializeComponent();
@@ -74,6 +76,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _incidentsVm = incidentsVm;
         _webResourcesVm = webResourcesVm;
         _todoVm = todoVm;
+        _notesVm = notesVm;
 
         _vm.DataRefreshed += OnDataRefreshed;
         _vm.MonitorError += OnMonitorError;
@@ -117,6 +120,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 "Dashboard" => new DashboardView(_dashVm, _trackerVm, this),
                 "Incidents" => new IncidentsView(_incidentsVm),
                 "Tracker" => new TrackerView(_trackerVm, _trackerHistoryVm),
+
+                "Notes" => new NotesView(_notesVm),
                 "TrackerHistory" => new TrackerHistoryView(_trackerHistoryVm),
                 "Alerts" => new AlertsView(_alertsVm),
                 "AI" => new AIView(_aiVm),
@@ -224,6 +229,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _dashVm.UpdateData(e.Snapshots, e.Snapshots.Count(s =>
             (DateTime.UtcNow - s.FirstSeenAt.ToUniversalTime()).TotalHours < 24));
         _incidentsVm.UpdateData(e.Snapshots);
+        _notesVm.UpdateIncidents(e.Snapshots);
         if (e.Alerts.Count > 0)
             _alertsVm.AddAlerts(e.Alerts);
     }

@@ -4,12 +4,14 @@
 
 using D365Assistant.Core.Models;
 using D365Assistant.Core.Models.Alerts;
+using D365Assistant.Core.Models.Incident;
 using D365Assistant.ViewModels;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Shapes;
 
 namespace D365Assistant.Views;
 
@@ -19,96 +21,316 @@ public partial class IncidentsView : Page
 {
     private readonly IncidentsViewModel _vm;
 
+    private static readonly Color CBg = Color.FromRgb(0x0D, 0x11, 0x17);
+    private static readonly Color CSurface = Color.FromRgb(0x13, 0x19, 0x20);
+    private static readonly Color CBorder = Color.FromRgb(0x27, 0x2D, 0x38);
+    private static readonly Color CText = Color.FromRgb(0xE2, 0xE8, 0xF0);
+    private static readonly Color CMuted = Color.FromRgb(0x4B, 0x56, 0x63);
+    private static readonly Color CAccent = Color.FromRgb(0xA7, 0x8B, 0xFA);
+    private static readonly Color CGreen = Color.FromRgb(0x22, 0xC5, 0x5E);
+    private static readonly Color CRed = Color.FromRgb(0xF8, 0x51, 0x49);
+    private static readonly Color CBlue = Color.FromRgb(0x58, 0xA6, 0xFF);
+    private static readonly Color CYellow = Color.FromRgb(0xF5, 0xA6, 0x23);
+
     public IncidentsView(IncidentsViewModel vm)
     {
         _vm = vm;
         DataContext = _vm;
         Title = "Chamados";
-        Background = new SolidColorBrush(Color.FromRgb(0x0D, 0x11, 0x17));
+        Background = new SolidColorBrush(CBg);
 
-        var dock = new DockPanel { Margin = new Thickness(20) };
+        var dock = new DockPanel { Margin = new Thickness(24, 20, 24, 20) };
 
-        // Header
-        var hdr = new Grid { Margin = new Thickness(0, 0, 0, 16) };
+        // ── Header ────────────────────────────────────────────────────────────
+        var hdr = new Grid { Margin = new Thickness(0, 0, 0, 14) };
         hdr.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         hdr.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        var title = new TextBlock
+        var titleStack = new StackPanel();
+        titleStack.Children.Add(new TextBlock
         {
             Text = "Chamados",
-            FontSize = 22,
-            FontWeight = FontWeights.Bold,
-            Foreground = new SolidColorBrush(Color.FromRgb(0xE6, 0xED, 0xF3)),
-        };
-        Grid.SetColumn(title, 0);
-        hdr.Children.Add(title);
-
-        // Busca
-        var search = new TextBox
+            FontSize = 20,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(CText),
+        });
+        var countTb = new TextBlock
         {
-            Width = 220,
-            Background = new SolidColorBrush(Color.FromRgb(0x1C, 0x21, 0x28)),
-            Foreground = new SolidColorBrush(Color.FromRgb(0xE6, 0xED, 0xF3)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(0x30, 0x36, 0x3D)),
-            BorderThickness = new Thickness(1, 1, 1, 1),
-            FontSize = 13,
-            Padding = new Thickness(10, 7, 10, 7),
+            FontSize = 12,
+            Foreground = new SolidColorBrush(CMuted),
+            Margin = new Thickness(0, 2, 0, 0),
         };
-        search.TextChanged += (_, _) => _vm.SearchText = search.Text;
-        Grid.SetColumn(search, 1);
-        hdr.Children.Add(search);
+        titleStack.Children.Add(countTb);
+        Grid.SetColumn(titleStack, 0);
+        hdr.Children.Add(titleStack);
+
+        // Search box
+        var searchBox = new TextBox
+        {
+            Width = 240,
+            Background = new SolidColorBrush(CSurface),
+            Foreground = new SolidColorBrush(CText),
+            BorderBrush = new SolidColorBrush(CBorder),
+            BorderThickness = new Thickness(1),
+            FontSize = 12,
+            Padding = new Thickness(10, 7, 10, 7),
+            CaretBrush = new SolidColorBrush(CAccent),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        searchBox.TextChanged += (_, _) => _vm.SearchText = searchBox.Text;
+        Grid.SetColumn(searchBox, 1);
+        hdr.Children.Add(searchBox);
 
         DockPanel.SetDock(hdr, Dock.Top);
         dock.Children.Add(hdr);
 
-        // Lista
-        var listView = new ListView
+        // ── Toggle Ativos / Encerrados / Todos ────────────────────────────────
+        var toggleRow = new StackPanel
         {
-            Background = new SolidColorBrush(Color.FromRgb(0x16, 0x1B, 0x22)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(0x30, 0x36, 0x3D)),
-            BorderThickness = new Thickness(1, 1, 1, 1),
-            Foreground = new SolidColorBrush(Color.FromRgb(0xE6, 0xED, 0xF3)),
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 0, 0, 14),
         };
 
-        var gv = new GridView();
-        gv.Columns.Add(new GridViewColumn
-        {
-            Header = "Ticket",
-            Width = 130,
-            DisplayMemberBinding = new System.Windows.Data.Binding("TicketNumber")
-        });
-        gv.Columns.Add(new GridViewColumn
-        {
-            Header = "Cliente",
-            Width = 160,
-            DisplayMemberBinding = new System.Windows.Data.Binding("CustomerDisplayName")
-        });
-        gv.Columns.Add(new GridViewColumn
-        {
-            Header = "Título",
-            Width = 350,
-            DisplayMemberBinding = new System.Windows.Data.Binding("Title")
-        });
-        gv.Columns.Add(new GridViewColumn
-        {
-            Header = "Prioridade",
-            Width = 90,
-            DisplayMemberBinding = new System.Windows.Data.Binding("PriorityCode")
-        });
-        gv.Columns.Add(new GridViewColumn
-        {
-            Header = "Status",
-            Width = 130,
-            DisplayMemberBinding = new System.Windows.Data.Binding("StatusCode")
-        });
+        var toggleOptions = new[] { "Ativos", "Encerrados", "Todos" };
+        var toggleBtns = new Dictionary<string, Border>();
 
-        listView.View = gv;
-        listView.ItemsSource = _vm.Items;
-        dock.Children.Add(listView);
+        void SelectToggle(string val)
+        {
+            _vm.StatusFilter = val;
+            foreach (var (k, b) in toggleBtns)
+            {
+                var isActive = k == val;
+                b.Background = new SolidColorBrush(isActive
+                    ? Color.FromArgb(0x30, CAccent.R, CAccent.G, CAccent.B)
+                    : CSurface);
+                b.BorderBrush = new SolidColorBrush(isActive ? CAccent : CBorder);
+                ((TextBlock)b.Child).Foreground = new SolidColorBrush(isActive ? CAccent : CMuted);
+            }
+            // Update count label
+            countTb.Text = $"{_vm.Items.Count} chamado{(_vm.Items.Count != 1 ? "s" : "")}";
+        }
 
+        foreach (var opt in toggleOptions)
+        {
+            var lbl = new TextBlock
+            {
+                Text = opt,
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(CMuted),
+                Padding = new Thickness(16, 6, 16, 6),
+            };
+            var btn = new Border
+            {
+                Background = new SolidColorBrush(CSurface),
+                BorderBrush = new SolidColorBrush(CBorder),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Margin = new Thickness(0, 0, 6, 0),
+                Cursor = Cursors.Hand,
+                Child = lbl,
+            };
+            var capturedOpt = opt;
+            btn.MouseLeftButtonUp += (_, _) => SelectToggle(capturedOpt);
+            btn.MouseEnter += (_, _) =>
+            {
+                if (_vm.StatusFilter != capturedOpt)
+                    btn.Background = new SolidColorBrush(Color.FromRgb(0x1A, 0x20, 0x29));
+            };
+            btn.MouseLeave += (_, _) =>
+            {
+                if (_vm.StatusFilter != capturedOpt)
+                    btn.Background = new SolidColorBrush(CSurface);
+            };
+            toggleBtns[opt] = btn;
+            toggleRow.Children.Add(btn);
+        }
+        SelectToggle("Ativos");  // default
+        _vm.Items.CollectionChanged += (_, _) =>
+            countTb.Text = $"{_vm.Items.Count} chamado{(_vm.Items.Count != 1 ? "s" : "")}";
+
+        DockPanel.SetDock(toggleRow, Dock.Top);
+        dock.Children.Add(toggleRow);
+
+        // ── List ──────────────────────────────────────────────────────────────
+        var sv = new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        };
+        sv.PreviewMouseWheel += (_, e) =>
+        {
+            sv.ScrollToVerticalOffset(sv.VerticalOffset - e.Delta / 3.0);
+            e.Handled = true;
+        };
+
+        var itemsPanel = new StackPanel();
+        sv.Content = itemsPanel;
+
+        void RebuildList()
+        {
+            itemsPanel.Children.Clear();
+            foreach (var snap in _vm.Items)
+                itemsPanel.Children.Add(BuildIncidentRow(snap));
+
+            if (_vm.Items.Count == 0)
+                itemsPanel.Children.Add(new TextBlock
+                {
+                    Text = "Nenhum chamado para os filtros selecionados.",
+                    FontSize = 12,
+                    Foreground = new SolidColorBrush(CMuted),
+                    Margin = new Thickness(0, 12, 0, 0),
+                });
+        }
+
+        _vm.Items.CollectionChanged += (_, _) => Dispatcher.Invoke(RebuildList);
+        RebuildList();
+
+        dock.Children.Add(sv);
         Content = dock;
     }
+
+    private UIElement BuildIncidentRow(IncidentSnapshot snap)
+    {
+        var isClosed = snap.StateCode != 0;
+
+        // State label
+        var stateLabel = snap.StateCode switch
+        {
+            0 => snap.StatusCode switch
+            {
+                1 => "Em Atendimento",
+                2 => "Aguard. Cliente",
+                3 => "Aguardando Fila",
+                5 => "Impeditivo",
+                _ => "Ativo",
+            },
+            1 => "Resolvido",
+            2 => "Cancelado",
+            _ => $"Estado {snap.StateCode}",
+        };
+        var stateColor = snap.StateCode switch
+        {
+            0 => snap.StatusCode == 5 ? CRed : snap.StatusCode == 2 ? CYellow : CGreen,
+            1 => CMuted,
+            2 => CMuted,
+            _ => CMuted,
+        };
+
+        var row = new Border
+        {
+            Background = new SolidColorBrush(isClosed
+                ? Color.FromRgb(0x10, 0x15, 0x1C)
+                : CSurface),
+            BorderBrush = new SolidColorBrush(CBorder),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(14, 10, 14, 10),
+            Margin = new Thickness(0, 0, 0, 6),
+            Opacity = isClosed ? 0.65 : 1.0,
+        };
+
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(100) });
+        row.Child = grid;
+
+        // Ticket number
+        var ticketTb = new TextBlock
+        {
+            Text = snap.TicketNumber,
+            FontSize = 12,
+            FontFamily = new FontFamily("Consolas"),
+            Foreground = new SolidColorBrush(CBlue),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        Grid.SetColumn(ticketTb, 0);
+        grid.Children.Add(ticketTb);
+
+        // Customer
+        var customerTb = new TextBlock
+        {
+            Text = snap.CustomerDisplayName ?? "—",
+            FontSize = 12,
+            Foreground = new SolidColorBrush(isClosed ? CMuted : CText),
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Thickness(0, 0, 8, 0),
+        };
+        Grid.SetColumn(customerTb, 1);
+        grid.Children.Add(customerTb);
+
+        // Title
+        var titleTb = new TextBlock
+        {
+            Text = snap.Title,
+            FontSize = 12,
+            Foreground = new SolidColorBrush(isClosed ? CMuted : CText),
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Thickness(0, 0, 8, 0),
+        };
+        Grid.SetColumn(titleTb, 2);
+        grid.Children.Add(titleTb);
+
+        // Priority
+        var priLabel = snap.PriorityCode switch
+        {
+            419500000 => ("Urgente", CRed),
+            1 => ("Alto", CYellow),
+            2 => ("Normal", CBlue),
+            3 => ("Baixo", CMuted),
+            _ => ("—", CMuted),
+        };
+        var priBadge = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(0x22, priLabel.Item2.R, priLabel.Item2.G, priLabel.Item2.B)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0x55, priLabel.Item2.R, priLabel.Item2.G, priLabel.Item2.B)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(8, 3, 8, 3),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, 0, 8, 0),
+            Child = new TextBlock
+            {
+                Text = priLabel.Item1,
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(priLabel.Item2),
+            },
+        };
+        Grid.SetColumn(priBadge, 3);
+        grid.Children.Add(priBadge);
+
+        // Status badge
+        var stateBadge = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(0x18, stateColor.R, stateColor.G, stateColor.B)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0x40, stateColor.R, stateColor.G, stateColor.B)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(8, 3, 8, 3),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Child = new TextBlock
+            {
+                Text = stateLabel,
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(stateColor),
+            },
+        };
+        Grid.SetColumn(stateBadge, 4);
+        grid.Children.Add(stateBadge);
+
+        return row;
+    }
 }
+
 
 // ── AlertsView ────────────────────────────────────────────────────────────────
 
@@ -242,6 +464,8 @@ public partial class AlertsView : Page
 
 // ── TrackerView ───────────────────────────────────────────────────────────────
 
+// ── TrackerView ───────────────────────────────────────────────────────────────
+
 public partial class TrackerView : Page
 {
     private readonly TrackerViewModel _vm;
@@ -252,6 +476,12 @@ public partial class TrackerView : Page
     private TextBlock? _histTotal;
     private TextBlock? _histLabel;
     private readonly Dictionary<string, Button> _tabBtns = [];
+
+    // KPI TextBlocks para atualização dinâmica
+    private TextBlock? _kpiFaturavel;
+    private TextBlock? _kpiSessoes;
+    private TextBlock? _kpiMeta;
+    private StackPanel? _timelinePanel;
 
     // ── Palette ───────────────────────────────────────────────────────────────
     private static readonly Color CBg = Color.FromRgb(0x0D, 0x11, 0x17);
@@ -274,35 +504,213 @@ public partial class TrackerView : Page
         Title = "Time Tracker";
         Background = new SolidColorBrush(CBg);
 
-        // Root: 3 rows — timer card | controls card | history card
-        var root = new Grid { Margin = new Thickness(24, 20, 24, 20) };
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });           // timer
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(14) });        // gap
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });           // controls
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(14) });        // gap
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // history
+        // ── Root scroll ───────────────────────────────────────────────────────
+        var rootSv = new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        };
+        rootSv.PreviewMouseWheel += (_, e) =>
+        {
+            rootSv.ScrollToVerticalOffset(rootSv.VerticalOffset - e.Delta / 3.0);
+            e.Handled = true;
+        };
 
-        var timerCard = BuildTimerCard();
-        var controlsCard = BuildControlsCard();
-        var historyCard = BuildHistoryCard();
+        var root = new StackPanel { Margin = new Thickness(24, 20, 24, 20) };
+        rootSv.Content = root;
 
-        Grid.SetRow(timerCard, 0);
-        Grid.SetRow(controlsCard, 2);
-        Grid.SetRow(historyCard, 4);
+        // ── Page header ───────────────────────────────────────────────────────
+        var pageHdr = new Grid { Margin = new Thickness(0, 0, 0, 16) };
+        pageHdr.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        pageHdr.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        root.Children.Add(pageHdr);
 
-        root.Children.Add(timerCard);
-        root.Children.Add(controlsCard);
-        root.Children.Add(historyCard);
+        var titleStack = new StackPanel();
+        titleStack.Children.Add(new TextBlock
+        {
+            Text = "Time Tracker",
+            FontSize = 20,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(CText),
+        });
+        titleStack.Children.Add(new TextBlock
+        {
+            Text = "Controle de tempo e produtividade",
+            FontSize = 12,
+            Foreground = new SolidColorBrush(CMuted),
+            Margin = new Thickness(0, 2, 0, 0),
+        });
+        pageHdr.Children.Add(titleStack);
 
-        Content = root;
+        // Export button in header
+        var btnExportHdr = new Button
+        {
+            Content = "⬇  Exportar",
+            FontSize = 12,
+            FontWeight = FontWeights.SemiBold,
+            Background = new SolidColorBrush(Color.FromArgb(0x18, 0xA7, 0x8B, 0xFA)),
+            Foreground = new SolidColorBrush(CAccent),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0x40, 0xA7, 0x8B, 0xFA)),
+            BorderThickness = new Thickness(1),
+            Cursor = Cursors.Hand,
+            Padding = new Thickness(16, 8, 16, 8),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        btnExportHdr.MouseEnter += (_, _) => btnExportHdr.Background = new SolidColorBrush(Color.FromArgb(0x30, 0xA7, 0x8B, 0xFA));
+        btnExportHdr.MouseLeave += (_, _) => btnExportHdr.Background = new SolidColorBrush(Color.FromArgb(0x18, 0xA7, 0x8B, 0xFA));
+        btnExportHdr.Click += (_, _) =>
+        {
+            _histVm.SelectedPeriod = TrackerHistoryViewModel.PeriodKind.Day;
+            _histVm.ReferenceDate = DateTime.Today;
+            _histVm.ExportXlsxCommand.Execute(null);
+        };
+        Grid.SetColumn(btnExportHdr, 1);
+        pageHdr.Children.Add(btnExportHdr);
 
-        _vm.TodayEntries.CollectionChanged += (_, _) => Dispatcher.Invoke(RefreshHistory);
+        // ── KPI row ───────────────────────────────────────────────────────────
+        root.Children.Add(BuildKpiRow());
+        root.Children.Add(new Border { Height = 14 });
+
+        // ── Main area: timer+controls left | timeline right ───────────────────
+        var mainGrid = new Grid();
+        mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16) });
+        mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(320) });
+        root.Children.Add(mainGrid);
+
+        var leftCol = new StackPanel();
+        Grid.SetColumn(leftCol, 0);
+        mainGrid.Children.Add(leftCol);
+
+        leftCol.Children.Add(BuildTimerCard());
+        leftCol.Children.Add(new Border { Height = 12 });
+        leftCol.Children.Add(BuildControlsCard());
+
+        var rightCol = BuildTimelineCard();
+        Grid.SetColumn(rightCol, 2);
+        mainGrid.Children.Add(rightCol);
+
+        root.Children.Add(new Border { Height = 14 });
+
+        // ── History card ──────────────────────────────────────────────────────
+        root.Children.Add(BuildHistoryCard());
+
+        Content = rootSv;
+
+        _vm.TodayEntries.CollectionChanged += (_, _) => Dispatcher.Invoke(() => { RefreshHistory(); RefreshKpis(); RefreshTimeline(); });
         _vm.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(_vm.IsRunning) or nameof(_vm.StatusPill))
                 Dispatcher.Invoke(SyncTimerCard);
+            if (e.PropertyName == nameof(_vm.ActiveDescription))
+                Dispatcher.Invoke(RefreshTimeline);
         };
         RefreshHistory();
+        RefreshKpis();
+        RefreshTimeline();
+    }
+
+    // ── KPI Row ───────────────────────────────────────────────────────────────
+
+    private UIElement BuildKpiRow()
+    {
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        // Tempo Hoje
+        var kpiToday = KpiCard("Tempo Hoje", "0h 00m", CAccent, "⏱");
+        var kpiTodayVal = (TextBlock)((StackPanel)((Border)kpiToday).Child).Children[2];
+        kpiTodayVal.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("DayTotal") { Source = _vm });
+        Grid.SetColumn(kpiToday, 0);
+        grid.Children.Add(kpiToday);
+
+        // Tempo Faturável (calculado de TodayEntries – excluindo is_active)
+        var kpiFat = KpiCard("Tempo Registrado", "—", CGreen, "✓");
+        _kpiFaturavel = (TextBlock)((StackPanel)((Border)kpiFat).Child).Children[2];
+        Grid.SetColumn(kpiFat, 2);
+        grid.Children.Add(kpiFat);
+
+        // Sessões hoje
+        var kpiSess = KpiCard("Sessões Hoje", "0", CBlue, "#");
+        _kpiSessoes = (TextBlock)((StackPanel)((Border)kpiSess).Child).Children[2];
+        Grid.SetColumn(kpiSess, 4);
+        grid.Children.Add(kpiSess);
+
+        // Meta diária (8h)
+        var kpiMeta = KpiCard("Meta (8h)", "0%", CYellow, "◎");
+        _kpiMeta = (TextBlock)((StackPanel)((Border)kpiMeta).Child).Children[2];
+        Grid.SetColumn(kpiMeta, 6);
+        grid.Children.Add(kpiMeta);
+
+        return grid;
+    }
+
+    private void RefreshKpis()
+    {
+        var entries = _vm.TodayEntries.ToList();
+        var finishedSecs = entries.Where(e => !e.IsActive).Sum(e => e.Seconds);
+        var totalSecs = entries.Sum(e => e.Seconds);
+        var sessoes = entries.Count;
+
+        if (_kpiFaturavel != null)
+        {
+            var ts = TimeSpan.FromSeconds(finishedSecs);
+            _kpiFaturavel.Text = finishedSecs == 0 ? "—"
+                : ts.TotalHours >= 1 ? $"{(int)ts.TotalHours}h {ts.Minutes:D2}m"
+                : $"{ts.Minutes}m {ts.Seconds:D2}s";
+        }
+        if (_kpiSessoes != null)
+            _kpiSessoes.Text = sessoes.ToString();
+        if (_kpiMeta != null)
+        {
+            var pct = Math.Min(100, (int)Math.Round(totalSecs / (8.0 * 3600) * 100));
+            _kpiMeta.Text = $"{pct}%";
+            _kpiMeta.Foreground = new SolidColorBrush(pct >= 100 ? CGreen : pct >= 50 ? CYellow : CRed);
+        }
+    }
+
+    private Border KpiCard(string label, string value, Color accent, string icon)
+    {
+        var card = new Border
+        {
+            Background = new SolidColorBrush(CSurface),
+            BorderBrush = new SolidColorBrush(CBorder),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(18, 14, 18, 14),
+        };
+        var stack = new StackPanel();
+        stack.Children.Add(new TextBlock
+        {
+            Text = icon,
+            FontSize = 18,
+            Foreground = new SolidColorBrush(Color.FromArgb(0xCC, accent.R, accent.G, accent.B)),
+            Margin = new Thickness(0, 0, 0, 6),
+        });
+        stack.Children.Add(new TextBlock
+        {
+            Text = label,
+            FontSize = 10,
+            FontWeight = FontWeights.Bold,
+            Foreground = new SolidColorBrush(CMuted),
+            Margin = new Thickness(0, 0, 0, 4),
+        });
+        stack.Children.Add(new TextBlock
+        {
+            Text = value,
+            FontSize = 22,
+            FontFamily = new FontFamily("Consolas"),
+            FontWeight = FontWeights.Bold,
+            Foreground = new SolidColorBrush(accent),
+        });
+        card.Child = stack;
+        return card;
     }
 
     // ── Timer Card ────────────────────────────────────────────────────────────
@@ -310,37 +718,51 @@ public partial class TrackerView : Page
     private Border? _timerCard;
     private TextBlock? _pillText;
     private Border? _pill;
+    private TextBlock? _activeDescTb;
+    private TextBlock? _sessionStartTb;
 
     private UIElement BuildTimerCard()
     {
         _timerCard = Card();
 
-        var grid = new Grid { Margin = new Thickness(28, 20, 28, 20) };
+        var grid = new Grid { Margin = new Thickness(24, 18, 24, 18) };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         _timerCard.Child = grid;
 
-        // Left: status + timer + active ticket
+        // Left: status pill + timer + active ticket + description
         var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(left, 0);
         grid.Children.Add(left);
 
+        // Status pill row
+        var pillRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
         _pill = new Border
         {
             CornerRadius = new CornerRadius(12),
             Padding = new Thickness(12, 3, 12, 3),
-            Margin = new Thickness(0, 0, 0, 10),
-            HorizontalAlignment = HorizontalAlignment.Left,
         };
         _pillText = new TextBlock { FontSize = 10, FontWeight = FontWeights.Bold };
         _pill.Child = _pillText;
-        left.Children.Add(_pill);
+        pillRow.Children.Add(_pill);
 
+        _sessionStartTb = new TextBlock
+        {
+            FontSize = 10,
+            Foreground = new SolidColorBrush(CMuted),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(10, 0, 0, 0),
+        };
+        pillRow.Children.Add(_sessionStartTb);
+        left.Children.Add(pillRow);
+
+        // Timer display
         var timerTb = new TextBlock
         {
             FontFamily = new FontFamily("Consolas"),
             FontSize = 52,
             FontWeight = FontWeights.Bold,
+            Margin = new Thickness(0, 0, 0, 6),
         };
         timerTb.SetBinding(TextBlock.TextProperty,
             new System.Windows.Data.Binding("TimerDisplay") { Source = _vm });
@@ -348,7 +770,8 @@ public partial class TrackerView : Page
             new System.Windows.Data.Binding("TimerColor") { Source = _vm, Converter = new ColorStringToBrushConverter() });
         left.Children.Add(timerTb);
 
-        var activeRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+        // Active ticket badge + title
+        var activeRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
         var activeBadge = new Border
         {
             Background = new SolidColorBrush(Color.FromArgb(0x20, 0x58, 0xA6, 0xFF)),
@@ -368,7 +791,6 @@ public partial class TrackerView : Page
             new System.Windows.Data.Binding("ActiveTicket") { Source = _vm });
         activeBadge.Child = activeBadgeTb;
         activeRow.Children.Add(activeBadge);
-
         var activeTitleTb = new TextBlock
         {
             FontSize = 12,
@@ -380,14 +802,27 @@ public partial class TrackerView : Page
         activeRow.Children.Add(activeTitleTb);
         left.Children.Add(activeRow);
 
-        // Right: day total summary
+        // Active description
+        _activeDescTb = new TextBlock
+        {
+            FontSize = 11,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x6E, 0x76, 0x88)),
+            FontStyle = FontStyles.Italic,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 2, 0, 0),
+        };
+        _activeDescTb.SetBinding(TextBlock.TextProperty,
+            new System.Windows.Data.Binding("ActiveDescription") { Source = _vm });
+        left.Children.Add(_activeDescTb);
+
+        // Right: today total box
         var right = new Border
         {
             Background = new SolidColorBrush(Color.FromArgb(0x18, 0xA7, 0x8B, 0xFA)),
             BorderBrush = new SolidColorBrush(Color.FromArgb(0x30, 0xA7, 0x8B, 0xFA)),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(12),
-            Padding = new Thickness(20, 14, 20, 14),
+            Padding = new Thickness(24, 16, 24, 16),
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(20, 0, 0, 0),
         };
@@ -402,6 +837,7 @@ public partial class TrackerView : Page
             FontWeight = FontWeights.Bold,
             Foreground = new SolidColorBrush(Color.FromArgb(0x88, 0xA7, 0x8B, 0xFA)),
             HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 4),
         });
         var dayTotalTb = new TextBlock
         {
@@ -414,17 +850,78 @@ public partial class TrackerView : Page
         dayTotalTb.SetBinding(TextBlock.TextProperty,
             new System.Windows.Data.Binding("DayTotal") { Source = _vm });
         rightStack.Children.Add(dayTotalTb);
+
+        // Meta progress bar
+        var metaBar = new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(0x1E, 0x25, 0x30)),
+            CornerRadius = new CornerRadius(3),
+            Height = 4,
+            Margin = new Thickness(0, 8, 0, 4),
+            Width = 80,
+        };
+        var metaFill = new Border
+        {
+            Background = new SolidColorBrush(CAccent),
+            CornerRadius = new CornerRadius(3),
+            Height = 4,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Width = 0,
+        };
+        var metaGrid = new Grid();
+        metaGrid.Children.Add(metaBar);
+        metaGrid.Children.Add(metaFill);
+        rightStack.Children.Add(metaGrid);
+
+        var metaLabelTb = new TextBlock
+        {
+            FontSize = 9,
+            Foreground = new SolidColorBrush(CMuted),
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+        rightStack.Children.Add(metaLabelTb);
+
         right.Child = rightStack;
 
+        // update meta bar when DayTotal changes
+        _vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(_vm.DayTotal))
+            {
+                var entries = _vm.TodayEntries.ToList();
+                var totalSec = entries.Sum(x => x.Seconds);
+                var pct = Math.Min(1.0, totalSec / (8.0 * 3600));
+                metaFill.Width = 80 * pct;
+                metaLabelTb.Text = $"{(int)(pct * 100)}% da meta";
+                metaLabelTb.Foreground = new SolidColorBrush(pct >= 1.0 ? CGreen : CMuted);
+            }
+            if (e.PropertyName == nameof(_vm.ActiveTicket))
+                Dispatcher.Invoke(UpdateSessionStart);
+        };
+
         SyncTimerCard();
+        UpdateSessionStart();
         return _timerCard;
+    }
+
+    private void UpdateSessionStart()
+    {
+        if (_sessionStartTb == null) return;
+        if (string.IsNullOrEmpty(_vm.ActiveTicket))
+        {
+            _sessionStartTb.Text = "";
+            return;
+        }
+        var active = _vm.TodayEntries.FirstOrDefault(e => e.IsActive);
+        _sessionStartTb.Text = active != null ? $"desde {active.Start:HH:mm}" : "";
     }
 
     private void SyncTimerCard()
     {
         if (_pill == null || _pillText == null) return;
-        var isRunning = _vm.IsRunning;
-        var color = isRunning ? CGreen : CYellow;
+        var color = _vm.IsRunning ? CGreen
+                  : _vm.StatusPill == "PAUSADO" ? CYellow
+                  : Color.FromRgb(0x4B, 0x56, 0x63);
         _pill.Background = new SolidColorBrush(Color.FromArgb(0x25, color.R, color.G, color.B));
         _pill.BorderBrush = new SolidColorBrush(Color.FromArgb(0x50, color.R, color.G, color.B));
         _pill.BorderThickness = new Thickness(1);
@@ -437,32 +934,27 @@ public partial class TrackerView : Page
     private UIElement BuildControlsCard()
     {
         var card = Card();
-        var outer = new Grid { Margin = new Thickness(20, 16, 20, 16) };
-        outer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        outer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16) });
-        outer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        card.Child = outer;
+        var stack = new StackPanel { Margin = new Thickness(20, 16, 20, 16) };
+        card.Child = stack;
 
-        // Left: input + recents
-        var leftStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        Grid.SetColumn(leftStack, 0);
-        outer.Children.Add(leftStack);
+        // Row 1: Chamado + Descrição inline
+        var fieldsGrid = new Grid { Margin = new Thickness(0, 0, 0, 10) };
+        fieldsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
+        fieldsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
+        fieldsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        stack.Children.Add(fieldsGrid);
 
-        var inputRow = new Grid();
-        inputRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        inputRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-        var inputLabel = new TextBlock
+        // Chamado field
+        var chamadoStack = new StackPanel();
+        chamadoStack.Children.Add(new TextBlock
         {
-            Text = "Chamado",
-            FontSize = 10,
+            Text = "CHAMADO",
+            FontSize = 9,
             FontWeight = FontWeights.Bold,
             Foreground = new SolidColorBrush(CMuted),
-            Margin = new Thickness(0, 0, 0, 5),
-        };
-        leftStack.Children.Add(inputLabel);
-
-        var input = new TextBox
+            Margin = new Thickness(0, 0, 0, 4),
+        });
+        var ticketInput = new TextBox
         {
             Background = new SolidColorBrush(CBg),
             Foreground = new SolidColorBrush(CText),
@@ -470,29 +962,30 @@ public partial class TrackerView : Page
             BorderThickness = new Thickness(1),
             FontSize = 13,
             FontFamily = new FontFamily("Consolas"),
-            Padding = new Thickness(12, 9, 12, 9),
+            Padding = new Thickness(10, 8, 10, 8),
             CaretBrush = new SolidColorBrush(CAccent),
         };
-        input.SetBinding(TextBox.TextProperty, new System.Windows.Data.Binding("TicketInput")
+        ticketInput.SetBinding(TextBox.TextProperty, new System.Windows.Data.Binding("TicketInput")
         {
             Source = _vm,
             Mode = System.Windows.Data.BindingMode.TwoWay,
             UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged,
         });
-        input.KeyDown += (_, e) => { if (e.Key == Key.Enter) _vm.StartCommand.Execute(null); };
-        leftStack.Children.Add(input);
+        ticketInput.KeyDown += (_, e) => { if (e.Key == Key.Enter) _vm.StartCommand.Execute(null); };
+        chamadoStack.Children.Add(ticketInput);
+        Grid.SetColumn(chamadoStack, 0);
+        fieldsGrid.Children.Add(chamadoStack);
 
-        // Description input
-        var descLabel = new TextBlock
+        // Descrição field
+        var descStack = new StackPanel();
+        descStack.Children.Add(new TextBlock
         {
-            Text = "Descrição (opcional)",
-            FontSize = 10,
+            Text = "DESCRIÇÃO",
+            FontSize = 9,
             FontWeight = FontWeights.Bold,
             Foreground = new SolidColorBrush(CMuted),
-            Margin = new Thickness(0, 10, 0, 5),
-        };
-        leftStack.Children.Add(descLabel);
-
+            Margin = new Thickness(0, 0, 0, 4),
+        });
         var descInput = new TextBox
         {
             Background = new SolidColorBrush(CBg),
@@ -500,10 +993,8 @@ public partial class TrackerView : Page
             BorderBrush = new SolidColorBrush(CBorder),
             BorderThickness = new Thickness(1),
             FontSize = 12,
-            Padding = new Thickness(12, 8, 12, 8),
+            Padding = new Thickness(10, 8, 10, 8),
             CaretBrush = new SolidColorBrush(CAccent),
-            TextWrapping = TextWrapping.Wrap,
-            AcceptsReturn = false,
             MaxLength = 500,
         };
         descInput.SetBinding(TextBox.TextProperty, new System.Windows.Data.Binding("DescriptionInput")
@@ -512,10 +1003,42 @@ public partial class TrackerView : Page
             Mode = System.Windows.Data.BindingMode.TwoWay,
             UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged,
         });
-        leftStack.Children.Add(descInput);
+        Grid.SetColumn(descStack, 2);
+        descStack.Children.Add(descInput);
+        fieldsGrid.Children.Add(descStack);
 
-        // Recents chips
-        var recentRow = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
+        // Row 2: Buttons
+        var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
+
+        Button ActionBtn(string label, Color fg, Color bg, System.Windows.Input.ICommand cmd)
+        {
+            var b = new Button
+            {
+                Content = label,
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                Background = new SolidColorBrush(Color.FromArgb(0x22, bg.R, bg.G, bg.B)),
+                Foreground = new SolidColorBrush(fg),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x55, bg.R, bg.G, bg.B)),
+                BorderThickness = new Thickness(1),
+                Cursor = Cursors.Hand,
+                Padding = new Thickness(18, 9, 18, 9),
+                Margin = new Thickness(0, 0, 8, 0),
+                Command = cmd,
+            };
+            b.MouseEnter += (_, _) => b.Background = new SolidColorBrush(Color.FromArgb(0x40, bg.R, bg.G, bg.B));
+            b.MouseLeave += (_, _) => b.Background = new SolidColorBrush(Color.FromArgb(0x22, bg.R, bg.G, bg.B));
+            return b;
+        }
+
+        btnRow.Children.Add(ActionBtn("▶  Iniciar", CGreen, CGreen, _vm.StartCommand));
+        btnRow.Children.Add(ActionBtn("⏸  Pausar", CYellow, CYellow, _vm.PauseCommand));
+        btnRow.Children.Add(ActionBtn("⇄  Trocar", CAccent, CAccent, _vm.SwitchCommand));
+        btnRow.Children.Add(ActionBtn("⏹  Finalizar", CRed, CRed, _vm.StopCommand));
+        stack.Children.Add(btnRow);
+
+        // Row 3: Recent tickets chips
+        var recentRow = new WrapPanel();
         recentRow.Children.Add(new TextBlock
         {
             Text = "Recentes:",
@@ -532,7 +1055,7 @@ public partial class TrackerView : Page
             {
                 var chip = new Border
                 {
-                    Background = new SolidColorBrush(Color.FromRgb(0x1A, 0x20, 0x29)),
+                    Background = new SolidColorBrush(CSurface2),
                     BorderBrush = new SolidColorBrush(CBorder),
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(5),
@@ -544,57 +1067,197 @@ public partial class TrackerView : Page
                 var ticket = t;
                 chip.MouseLeftButtonUp += (_, _) => _vm.TicketInput = ticket;
                 chip.MouseEnter += (_, _) => chip.Background = new SolidColorBrush(Color.FromRgb(0x22, 0x29, 0x36));
-                chip.MouseLeave += (_, _) => chip.Background = new SolidColorBrush(Color.FromRgb(0x1A, 0x20, 0x29));
+                chip.MouseLeave += (_, _) => chip.Background = new SolidColorBrush(CSurface2);
                 recentRow.Children.Add(chip);
             }
         }
         _vm.RecentTickets.CollectionChanged += (_, _) => Dispatcher.Invoke(RebuildRecents);
         RebuildRecents();
-        leftStack.Children.Add(recentRow);
-
-        // Right: action buttons (vertical stack)
-        var btnStack = new StackPanel
-        {
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Right,
-        };
-        Grid.SetColumn(btnStack, 2);
-        outer.Children.Add(btnStack);
-
-        var btnRow1 = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
-        var btnRow2 = new StackPanel { Orientation = Orientation.Horizontal };
-
-        Button ActionBtn(string label, Color fg, Color bg, System.Windows.Input.ICommand cmd, bool hasBorder = false)
-        {
-            var b = new Button
-            {
-                Content = label,
-                FontSize = 12,
-                FontWeight = FontWeights.SemiBold,
-                Background = new SolidColorBrush(Color.FromArgb(0x22, bg.R, bg.G, bg.B)),
-                Foreground = new SolidColorBrush(fg),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(0x55, bg.R, bg.G, bg.B)),
-                BorderThickness = new Thickness(1),
-                Cursor = Cursors.Hand,
-                Padding = new Thickness(16, 9, 16, 9),
-                Margin = new Thickness(0, 0, 6, 0),
-                Command = cmd,
-                MinWidth = 100,
-            };
-            b.MouseEnter += (_, _) => b.Background = new SolidColorBrush(Color.FromArgb(0x40, bg.R, bg.G, bg.B));
-            b.MouseLeave += (_, _) => b.Background = new SolidColorBrush(Color.FromArgb(0x22, bg.R, bg.G, bg.B));
-            return b;
-        }
-
-        btnRow1.Children.Add(ActionBtn("▶  Iniciar", CGreen, CGreen, _vm.StartCommand));
-        btnRow1.Children.Add(ActionBtn("↺  Retomar", CText, CMuted, _vm.PauseCommand));
-        btnRow2.Children.Add(ActionBtn("⏹  Finalizar", CRed, CRed, _vm.StopCommand));
-        btnRow2.Children.Add(ActionBtn("⇄  Trocar", CAccent, CAccent, _vm.SwitchCommand));
-
-        btnStack.Children.Add(btnRow1);
-        btnStack.Children.Add(btnRow2);
+        stack.Children.Add(recentRow);
 
         return card;
+    }
+
+    // ── Timeline Card ─────────────────────────────────────────────────────────
+
+    private UIElement BuildTimelineCard()
+    {
+        var card = Card();
+        var dock = new DockPanel();
+        card.Child = dock;
+
+        // Header
+        var hdr = new Border
+        {
+            BorderBrush = new SolidColorBrush(CBorder),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Background = new SolidColorBrush(Color.FromArgb(0x40, 0x1A, 0x20, 0x29)),
+            CornerRadius = new CornerRadius(10, 10, 0, 0),
+            Padding = new Thickness(16, 12, 16, 12),
+        };
+        hdr.Child = new TextBlock
+        {
+            Text = "Linha do Tempo — Hoje",
+            FontSize = 12,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(CText),
+        };
+        DockPanel.SetDock(hdr, Dock.Top);
+        dock.Children.Add(hdr);
+
+        var sv = new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            MaxHeight = 340,
+        };
+        sv.PreviewMouseWheel += (_, e) =>
+        {
+            sv.ScrollToVerticalOffset(sv.VerticalOffset - e.Delta / 3.0);
+            e.Handled = true;
+        };
+
+        _timelinePanel = new StackPanel { Margin = new Thickness(16, 12, 16, 12) };
+        sv.Content = _timelinePanel;
+        dock.Children.Add(sv);
+
+        return card;
+    }
+
+    private void RefreshTimeline()
+    {
+        if (_timelinePanel == null) return;
+        _timelinePanel.Children.Clear();
+
+        var entries = _vm.TodayEntries.ToList().OrderBy(e => e.Start).ToList();
+        if (entries.Count == 0)
+        {
+            _timelinePanel.Children.Add(new TextBlock
+            {
+                Text = "Nenhuma atividade hoje.",
+                FontSize = 11,
+                Foreground = new SolidColorBrush(CMuted),
+            });
+            return;
+        }
+
+        for (int i = 0; i < entries.Count; i++)
+        {
+            var e = entries[i];
+            var isLast = i == entries.Count - 1;
+
+            var itemGrid = new Grid { Margin = new Thickness(0, 0, 0, isLast ? 0 : 12) };
+            itemGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(32) });
+            itemGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            // Dot column with vertical line
+            var dotCol = new Grid();
+            var lineRect = new System.Windows.Shapes.Rectangle
+            {
+                Width = 1,
+                Fill = new SolidColorBrush(CBorder),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Stretch,
+            };
+            if (isLast) lineRect.Visibility = Visibility.Hidden;
+            dotCol.Children.Add(lineRect);
+
+            Color dotColor = e.IsActive ? CGreen : CAccent;
+            var dot = new Ellipse
+            {
+                Width = 8,
+                Height = 8,
+                Fill = new SolidColorBrush(dotColor),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 2, 0, 0),
+            };
+            dotCol.Children.Add(dot);
+            Grid.SetColumn(dotCol, 0);
+            itemGrid.Children.Add(dotCol);
+
+            // Content
+            var content = new StackPanel { Margin = new Thickness(0, 0, 0, 0) };
+            var timeTicket = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 2) };
+            timeTicket.Children.Add(new TextBlock
+            {
+                Text = e.Start.ToString("HH:mm"),
+                FontSize = 10,
+                FontFamily = new FontFamily("Consolas"),
+                Foreground = new SolidColorBrush(CMuted),
+                Margin = new Thickness(0, 0, 6, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            timeTicket.Children.Add(new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(0x20, 0x58, 0xA6, 0xFF)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x40, 0x58, 0xA6, 0xFF)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(3),
+                Padding = new Thickness(5, 1, 5, 1),
+                Child = new TextBlock
+                {
+                    Text = e.TicketId,
+                    FontSize = 10,
+                    FontFamily = new FontFamily("Consolas"),
+                    Foreground = new SolidColorBrush(CBlue),
+                },
+            });
+            if (e.IsActive)
+                timeTicket.Children.Add(new Border
+                {
+                    Background = new SolidColorBrush(Color.FromArgb(0x20, 0x22, 0xC5, 0x5E)),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(0x40, 0x22, 0xC5, 0x5E)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(3),
+                    Padding = new Thickness(5, 1, 5, 1),
+                    Margin = new Thickness(4, 0, 0, 0),
+                    Child = new TextBlock
+                    {
+                        Text = "em andamento",
+                        FontSize = 9,
+                        Foreground = new SolidColorBrush(CGreen),
+                    },
+                });
+            content.Children.Add(timeTicket);
+
+            if (!string.IsNullOrWhiteSpace(e.Description))
+                content.Children.Add(new TextBlock
+                {
+                    Text = e.Description,
+                    FontSize = 11,
+                    Foreground = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8)),
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 2, 0, 0),
+                });
+            else if (!string.IsNullOrWhiteSpace(e.Title))
+                content.Children.Add(new TextBlock
+                {
+                    Text = e.Title,
+                    FontSize = 11,
+                    Foreground = new SolidColorBrush(CMuted),
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 2, 0, 0),
+                });
+
+            var durTs = TimeSpan.FromSeconds(e.Seconds);
+            var durFmt = durTs.TotalHours >= 1
+                ? $"{(int)durTs.TotalHours}h {durTs.Minutes:D2}m"
+                : $"{durTs.Minutes}m {durTs.Seconds:D2}s";
+            content.Children.Add(new TextBlock
+            {
+                Text = durFmt,
+                FontSize = 10,
+                FontFamily = new FontFamily("Consolas"),
+                Foreground = new SolidColorBrush(e.IsActive ? CGreen : CMuted),
+                Margin = new Thickness(0, 2, 0, 0),
+            });
+
+            Grid.SetColumn(content, 1);
+            itemGrid.Children.Add(content);
+
+            _timelinePanel.Children.Add(itemGrid);
+        }
     }
 
     // ── History Card ──────────────────────────────────────────────────────────
@@ -605,12 +1268,13 @@ public partial class TrackerView : Page
         var dock = new DockPanel();
         card.Child = dock;
 
-        // Header: tabs + export buttons
+        // Header
         var header = new Border
         {
             BorderBrush = new SolidColorBrush(CBorder),
             BorderThickness = new Thickness(0, 0, 0, 1),
             Background = new SolidColorBrush(Color.FromArgb(0x40, 0x1A, 0x20, 0x29)),
+            CornerRadius = new CornerRadius(10, 10, 0, 0),
         };
         var headerGrid = new Grid { Margin = new Thickness(16, 0, 16, 0) };
         headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -644,7 +1308,7 @@ public partial class TrackerView : Page
         }
         HighlightTab("Hoje");
 
-        // Section label + total (center)
+        // Total (center)
         var centerStack = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -672,7 +1336,7 @@ public partial class TrackerView : Page
         centerStack.Children.Add(_histLabel);
         centerStack.Children.Add(_histTotal);
 
-        // Export buttons (right)
+        // Export buttons
         var exportRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(exportRow, 2);
         headerGrid.Children.Add(exportRow);
@@ -690,7 +1354,6 @@ public partial class TrackerView : Page
             _histVm.ReferenceDate = DateTime.Today;
             _histVm.ExportXlsxCommand.Execute(null);
         };
-
         var btnCsv = ExportBtn("⬇ CSV", CBlue);
         btnCsv.Margin = new Thickness(6, 0, 0, 0);
         btnCsv.Click += (_, _) => ExportCsvHoje();
@@ -701,11 +1364,11 @@ public partial class TrackerView : Page
         DockPanel.SetDock(header, Dock.Top);
         dock.Children.Add(header);
 
-        // Entries scroll
         var sv = new ScrollViewer
         {
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            MaxHeight = 480,
         };
         sv.PreviewMouseWheel += (_, e) =>
         {
@@ -747,13 +1410,12 @@ public partial class TrackerView : Page
                 entries = _histVm._storage_GetAll();
                 label = "todos os registros";
                 break;
-            default: // Hoje
+            default:
                 entries = _vm.TodayEntries.ToList();
                 label = DateTime.Today.ToString("dd/MM/yyyy");
                 break;
         }
 
-        // Update header label + grand total
         if (_histLabel != null) _histLabel.Text = label + "  ·  ";
         var totalSecs = entries.Sum(e => e.Seconds);
         var tsTotal = TimeSpan.FromSeconds(totalSecs);
@@ -774,10 +1436,7 @@ public partial class TrackerView : Page
             return;
         }
 
-        // ── Group by day (descending), then by ticket ─────────────────────────
-        var byDay = entries
-            .GroupBy(e => e.Start.Date)
-            .OrderByDescending(g => g.Key);
+        var byDay = entries.GroupBy(e => e.Start.Date).OrderByDescending(g => g.Key);
 
         foreach (var dayGroup in byDay)
         {
@@ -788,10 +1447,9 @@ public partial class TrackerView : Page
                 ? $"{(int)dayTs.TotalHours}h {dayTs.Minutes:D2}m"
                 : $"{dayTs.Minutes}m {dayTs.Seconds:D2}s";
             var dayLabel = dayDate == DateTime.Today ? "Hoje"
-                             : dayDate == DateTime.Today.AddDays(-1) ? "Ontem"
-                             : dayDate.ToString("ddd, dd/MM/yyyy", new System.Globalization.CultureInfo("pt-BR"));
+                         : dayDate == DateTime.Today.AddDays(-1) ? "Ontem"
+                         : dayDate.ToString("ddd, dd/MM/yyyy", new System.Globalization.CultureInfo("pt-BR"));
 
-            // ── Day card ──────────────────────────────────────────────────────
             var dayCard = new Border
             {
                 Background = new SolidColorBrush(CSurface),
@@ -803,7 +1461,7 @@ public partial class TrackerView : Page
             var dayStack = new StackPanel();
             dayCard.Child = dayStack;
 
-            // Day header row
+            // Day header
             var dayHdr = new Border
             {
                 Background = new SolidColorBrush(Color.FromRgb(0x0F, 0x14, 0x1C)),
@@ -815,9 +1473,11 @@ public partial class TrackerView : Page
             dayHdrGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             dayHdr.Child = dayHdrGrid;
 
+            var ticketCount = dayGroup.GroupBy(e => e.TicketId).Count();
+            var dayLabelFull = $"{dayLabel}  ·  {ticketCount} chamado{(ticketCount != 1 ? "s" : "")}";
             dayHdrGrid.Children.Add(new TextBlock
             {
-                Text = dayLabel,
+                Text = dayLabelFull,
                 FontSize = 12,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = new SolidColorBrush(CText),
@@ -834,17 +1494,15 @@ public partial class TrackerView : Page
             };
             Grid.SetColumn(dayTotalTb, 1);
             dayHdrGrid.Children.Add(dayTotalTb);
-
             dayStack.Children.Add(dayHdr);
 
-            // Divider
             dayStack.Children.Add(new System.Windows.Shapes.Rectangle
             {
                 Height = 1,
                 Fill = new SolidColorBrush(CBorder),
             });
 
-            // ── Ticket rows inside day ────────────────────────────────────────
+            // Ticket rows
             var ticketGroups = dayGroup
                 .GroupBy(e => e.TicketId)
                 .Select(g => (
@@ -853,7 +1511,9 @@ public partial class TrackerView : Page
                     Secs: g.Sum(e => e.Seconds),
                     Count: g.Count(),
                     First: g.Min(e => e.Start),
-                    Last: g.Max(e => e.End ?? e.Start)
+                    Last: g.Max(e => e.End ?? e.Start),
+                    Descs: g.Where(e => !string.IsNullOrWhiteSpace(e.Description))
+                             .Select(e => e.Description.Trim()).Distinct().ToList()
                 ))
                 .OrderByDescending(g => g.Secs)
                 .ToList();
@@ -862,25 +1522,20 @@ public partial class TrackerView : Page
 
             for (int i = 0; i < ticketGroups.Count; i++)
             {
-                var (ticket, title, secs, count, first, last) = ticketGroups[i];
+                var (ticket, title, secs, count, first, last, descs) = ticketGroups[i];
 
-                var ticketRow = new Border
-                {
-                    Padding = new Thickness(14, 10, 14, 10),
-                };
-
+                var ticketRow = new Border { Padding = new Thickness(14, 10, 14, 10) };
                 var grid = new Grid();
                 grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 ticketRow.Child = grid;
 
-                // Left side
                 var leftCol = new StackPanel { Margin = new Thickness(0, 0, 12, 0) };
                 Grid.SetColumn(leftCol, 0);
                 grid.Children.Add(leftCol);
 
-                // Badge + title row
-                var topRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 5) };
+                // Ticket badge + title
+                var topRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
                 topRow.Children.Add(new Border
                 {
                     Background = new SolidColorBrush(Color.FromArgb(0x22, 0x58, 0xA6, 0xFF)),
@@ -907,11 +1562,11 @@ public partial class TrackerView : Page
                     });
                 leftCol.Children.Add(topRow);
 
-                // Time range + session count
-                var metaRow = new StackPanel { Orientation = Orientation.Horizontal };
+                // Meta row: time range + sessions
+                var metaRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 2) };
                 metaRow.Children.Add(new TextBlock
                 {
-                    Text = $"{first:HH:mm} – {last:HH:mm}",
+                    Text = $"{first:HH:mm} – {(last == first ? "em andamento" : last.ToString("HH:mm"))}",
                     FontSize = 10,
                     FontFamily = new FontFamily("Consolas"),
                     Foreground = new SolidColorBrush(CMuted),
@@ -925,21 +1580,16 @@ public partial class TrackerView : Page
                     });
                 leftCol.Children.Add(metaRow);
 
-                // Descriptions from sessions
-                var descriptions = dayGroup
-                    .Where(e => e.TicketId == ticket && !string.IsNullOrWhiteSpace(e.Description))
-                    .Select(e => e.Description.Trim())
-                    .Distinct()
-                    .ToList();
-                if (descriptions.Count > 0)
+                // Descriptions
+                if (descs.Count > 0)
                 {
-                    var descText = string.Join(" · ", descriptions);
+                    var descText = string.Join(" · ", descs);
                     leftCol.Children.Add(new TextBlock
                     {
-                        Text = descText.Length > 120 ? descText[..120] + "…" : descText,
+                        Text = descText.Length > 140 ? descText[..140] + "…" : descText,
                         FontSize = 10,
                         Foreground = new SolidColorBrush(Color.FromRgb(0x6E, 0x76, 0x88)),
-                        Margin = new Thickness(0, 3, 0, 0),
+                        Margin = new Thickness(0, 2, 0, 4),
                         TextWrapping = TextWrapping.Wrap,
                         FontStyle = FontStyles.Italic,
                     });
@@ -951,7 +1601,7 @@ public partial class TrackerView : Page
                     Background = new SolidColorBrush(Color.FromRgb(0x1E, 0x25, 0x30)),
                     CornerRadius = new CornerRadius(3),
                     Height = 3,
-                    Margin = new Thickness(0, 6, 0, 0),
+                    Margin = new Thickness(0, 4, 0, 0),
                 };
                 var barFill = new Border
                 {
@@ -961,19 +1611,18 @@ public partial class TrackerView : Page
                     HorizontalAlignment = HorizontalAlignment.Left,
                 };
                 var ratio = maxTicketSecs > 0 ? (double)secs / maxTicketSecs : 0;
-                barTrack.SizeChanged += (_, e) => barFill.Width = e.NewSize.Width * ratio;
+                barTrack.SizeChanged += (_, ev) => barFill.Width = ev.NewSize.Width * ratio;
                 barFill.Loaded += (_, _) => barFill.Width = barTrack.ActualWidth * ratio;
                 var barGrid = new Grid();
                 barGrid.Children.Add(barTrack);
                 barGrid.Children.Add(barFill);
                 leftCol.Children.Add(barGrid);
 
-                // Right: duration
+                // Duration
                 var tspan = TimeSpan.FromSeconds(secs);
                 var fmt = tspan.TotalHours >= 1
                     ? $"{(int)tspan.TotalHours}h {tspan.Minutes:D2}m"
                     : $"{tspan.Minutes}m {tspan.Seconds:D2}s";
-
                 var durTb = new TextBlock
                 {
                     Text = fmt,
@@ -988,7 +1637,6 @@ public partial class TrackerView : Page
 
                 dayStack.Children.Add(ticketRow);
 
-                // Divider between tickets (not after last)
                 if (i < ticketGroups.Count - 1)
                     dayStack.Children.Add(new System.Windows.Shapes.Rectangle
                     {
@@ -1522,4 +2170,770 @@ public class ColorStringToBrushConverter : System.Windows.Data.IValueConverter
     }
     public object ConvertBack(object v, Type t, object p, System.Globalization.CultureInfo c)
         => throw new NotImplementedException();
+}
+
+// ── NotesView ─────────────────────────────────────────────────────────────────
+
+public partial class NotesView : Page
+{
+    private readonly NotesViewModel _vm;
+
+    // paleta compartilhada
+    private static readonly Color CBg = Color.FromRgb(0x0D, 0x11, 0x17);
+    private static readonly Color CSurface = Color.FromRgb(0x13, 0x19, 0x20);
+    private static readonly Color CSurface2 = Color.FromRgb(0x1A, 0x20, 0x29);
+    private static readonly Color CBorder = Color.FromRgb(0x27, 0x2D, 0x38);
+    private static readonly Color CText = Color.FromRgb(0xE2, 0xE8, 0xF0);
+    private static readonly Color CMuted = Color.FromRgb(0x4B, 0x56, 0x63);
+    private static readonly Color CAccent = Color.FromRgb(0xA7, 0x8B, 0xFA);
+    private static readonly Color CGreen = Color.FromRgb(0x22, 0xC5, 0x5E);
+    private static readonly Color CRed = Color.FromRgb(0xF8, 0x51, 0x49);
+    private static readonly Color CBlue = Color.FromRgb(0x58, 0xA6, 0xFF);
+
+    // estado das abas
+    private Core.Models.Notes.Note? _activeNote;
+    private readonly Dictionary<int, TabEntry> _tabs = [];  // noteId → entry
+
+    // elementos de layout
+    private StackPanel? _tabStrip;
+    private Grid? _editorArea;
+    private TextBox? _titleBox;
+    private TextBox? _contentBox;
+    private TextBlock? _metaTb;
+    private Border? _incidentBadge;
+    private TextBlock? _incidentBadgeTb;
+    private bool _suppressSave;
+
+    private record TabEntry(Core.Models.Notes.Note Note, Border Tab, TextBlock Label);
+
+    public NotesView(NotesViewModel vm)
+    {
+        _vm = vm;
+        DataContext = _vm;
+        Title = "Notas";
+        Background = new SolidColorBrush(CBg);
+
+        // ── root layout ───────────────────────────────────────────────────────
+        var root = new Grid();
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // 0: header
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });   // 1: tab strip
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 2: editor
+
+        root.Children.Add(BuildHeader());
+
+        // ── tab strip ─────────────────────────────────────────────────────────
+        var tabStripBorder = new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(0x10, 0x15, 0x1C)),
+            BorderBrush = new SolidColorBrush(CBorder),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+        };
+        Grid.SetRow(tabStripBorder, 1);
+        root.Children.Add(tabStripBorder);
+
+        var tabStripScroll = new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        };
+        _tabStrip = new StackPanel { Orientation = Orientation.Horizontal };
+        tabStripScroll.Content = _tabStrip;
+        tabStripBorder.Child = tabStripScroll;
+
+        // ── editor area ───────────────────────────────────────────────────────
+        _editorArea = new Grid { Margin = new Thickness(0) };
+        _editorArea.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // toolbar
+        _editorArea.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // textarea
+        _editorArea.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // statusbar
+        Grid.SetRow(_editorArea, 2);
+        root.Children.Add(_editorArea);
+
+        BuildEditorArea();
+
+        Content = root;
+
+        // Carrega notas existentes como abas
+        foreach (var note in _vm.Notes)
+            AddTab(note, activate: false);
+
+        // Abre primeira aba ou placeholder
+        if (_tabs.Count > 0)
+            ActivateTab(_tabs.Values.First().Note);
+        else
+            ShowEmptyState();
+    }
+
+    // ── Header ────────────────────────────────────────────────────────────────
+
+    private UIElement BuildHeader()
+    {
+        var hdr = new Grid
+        {
+            Background = new SolidColorBrush(CSurface),
+            Margin = new Thickness(0),
+        };
+        hdr.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        hdr.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var titleStack = new StackPanel { Margin = new Thickness(24, 14, 0, 14) };
+        titleStack.Children.Add(new TextBlock
+        {
+            Text = "Notas",
+            FontSize = 20,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(CText),
+        });
+        titleStack.Children.Add(new TextBlock
+        {
+            Text = "Bloco de notas pessoal — vinculável a chamados",
+            FontSize = 12,
+            Foreground = new SolidColorBrush(CMuted),
+            Margin = new Thickness(0, 2, 0, 0),
+        });
+        Grid.SetColumn(titleStack, 0);
+        hdr.Children.Add(titleStack);
+
+        var btnNew = new Button
+        {
+            Content = "+ Nova nota",
+            FontSize = 12,
+            FontWeight = FontWeights.SemiBold,
+            Background = new SolidColorBrush(Color.FromArgb(0x25, CAccent.R, CAccent.G, CAccent.B)),
+            Foreground = new SolidColorBrush(CAccent),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0x55, CAccent.R, CAccent.G, CAccent.B)),
+            BorderThickness = new Thickness(1),
+            Cursor = Cursors.Hand,
+            Padding = new Thickness(18, 8, 18, 8),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 24, 0),
+        };
+        btnNew.MouseEnter += (_, _) => btnNew.Background = new SolidColorBrush(Color.FromArgb(0x40, CAccent.R, CAccent.G, CAccent.B));
+        btnNew.MouseLeave += (_, _) => btnNew.Background = new SolidColorBrush(Color.FromArgb(0x25, CAccent.R, CAccent.G, CAccent.B));
+        btnNew.Click += (_, _) => NewNote();
+        Grid.SetColumn(btnNew, 1);
+        hdr.Children.Add(btnNew);
+
+        Grid.SetRow(hdr, 0);
+        return hdr;
+    }
+
+    // ── Editor Area ───────────────────────────────────────────────────────────
+
+    // _pickerContainer is a Border whose .Child is replaced on each open — no reuse of visual nodes
+    private Border? _pickerContainer;
+
+    private void BuildEditorArea()
+    {
+        if (_editorArea == null) return;
+
+        // ── Row 0: Toolbar ────────────────────────────────────────────────────
+        var toolbar = new Border
+        {
+            Background = new SolidColorBrush(CSurface),
+            BorderBrush = new SolidColorBrush(CBorder),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Padding = new Thickness(20, 10, 20, 10),
+        };
+        Grid.SetRow(toolbar, 0);
+        _editorArea.Children.Add(toolbar);
+
+        var toolbarContent = new Grid();
+        toolbarContent.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        toolbarContent.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        toolbar.Child = toolbarContent;
+
+        var leftBar = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(leftBar, 0);
+        toolbarContent.Children.Add(leftBar);
+
+        _titleBox = new TextBox
+        {
+            Background = Brushes.Transparent,
+            Foreground = new SolidColorBrush(CText),
+            BorderThickness = new Thickness(0),
+            FontSize = 18,
+            FontWeight = FontWeights.SemiBold,
+            Padding = new Thickness(0),
+            CaretBrush = new SolidColorBrush(CAccent),
+            IsEnabled = false,
+        };
+        _titleBox.TextChanged += OnTitleChanged;
+        leftBar.Children.Add(_titleBox);
+
+        _incidentBadge = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(0x20, CBlue.R, CBlue.G, CBlue.B)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0x44, CBlue.R, CBlue.G, CBlue.B)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(8, 3, 8, 3),
+            Margin = new Thickness(0, 6, 0, 0),
+            Cursor = Cursors.Hand,
+            Visibility = Visibility.Collapsed,
+        };
+        _incidentBadgeTb = new TextBlock
+        {
+            FontSize = 11,
+            FontFamily = new FontFamily("Consolas"),
+            Foreground = new SolidColorBrush(CBlue),
+        };
+        _incidentBadge.Child = _incidentBadgeTb;
+        _incidentBadge.MouseLeftButtonUp += (_, _) => ToggleIncidentPicker();
+        leftBar.Children.Add(_incidentBadge);
+
+        _metaTb = new TextBlock
+        {
+            FontSize = 10,
+            Foreground = new SolidColorBrush(CMuted),
+            Margin = new Thickness(0, 4, 0, 0),
+        };
+        leftBar.Children.Add(_metaTb);
+
+        var rightBar = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(rightBar, 1);
+        toolbarContent.Children.Add(rightBar);
+
+        var btnLink = ToolbarBtn("🔗 Vincular chamado", CBlue);
+        btnLink.Click += (_, _) => ToggleIncidentPicker();
+        rightBar.Children.Add(btnLink);
+
+        var btnUnlink = ToolbarBtn("✕ Desvincular", CMuted);
+        btnUnlink.Margin = new Thickness(6, 0, 0, 0);
+        btnUnlink.Click += (_, _) => UnlinkIncident();
+        rightBar.Children.Add(btnUnlink);
+
+        var btnDelete = ToolbarBtn("🗑 Excluir", CRed);
+        btnDelete.Margin = new Thickness(6, 0, 0, 0);
+        btnDelete.Click += (_, _) => DeleteActive();
+        rightBar.Children.Add(btnDelete);
+
+        // ── Row 1: editorStack (picker + textarea) ────────────────────────────
+        var editorStack = new Grid();
+        editorStack.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // 0: picker
+        editorStack.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 1: textarea
+        Grid.SetRow(editorStack, 1);
+        _editorArea.Children.Add(editorStack);
+
+        // Picker container — child is rebuilt fresh each open; never reused across parents
+        _pickerContainer = new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(0x16, 0x1C, 0x25)),
+            BorderBrush = new SolidColorBrush(CBorder),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            MaxHeight = 240,
+            Visibility = Visibility.Collapsed,
+        };
+        Grid.SetRow(_pickerContainer, 0);
+        editorStack.Children.Add(_pickerContainer);
+
+        // Textarea
+        _contentBox = new TextBox
+        {
+            Background = new SolidColorBrush(CBg),
+            Foreground = new SolidColorBrush(CText),
+            BorderThickness = new Thickness(0),
+            FontSize = 14,
+            FontFamily = new FontFamily("Consolas"),
+            Padding = new Thickness(24, 18, 24, 18),
+            AcceptsReturn = true,
+            AcceptsTab = true,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            CaretBrush = new SolidColorBrush(CAccent),
+            IsEnabled = false,
+        };
+        _contentBox.TextChanged += OnContentChanged;
+        Grid.SetRow(_contentBox, 1);
+        editorStack.Children.Add(_contentBox);
+
+        // ── Row 2: Status bar ─────────────────────────────────────────────────
+        var statusBar = new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(0x10, 0x15, 0x1C)),
+            BorderBrush = new SolidColorBrush(CBorder),
+            BorderThickness = new Thickness(0, 1, 0, 0),
+            Padding = new Thickness(20, 5, 20, 5),
+        };
+        Grid.SetRow(statusBar, 2);
+        _editorArea.Children.Add(statusBar);
+
+        var statusGrid = new Grid();
+        statusGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        statusGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        statusBar.Child = statusGrid;
+
+        var savedTb = new TextBlock
+        {
+            Text = "Salvo automaticamente",
+            FontSize = 10,
+            Foreground = new SolidColorBrush(CMuted),
+        };
+        Grid.SetColumn(savedTb, 0);
+        statusGrid.Children.Add(savedTb);
+
+        var charCountTb = new TextBlock { FontSize = 10, Foreground = new SolidColorBrush(CMuted) };
+        Grid.SetColumn(charCountTb, 1);
+        statusGrid.Children.Add(charCountTb);
+
+        _contentBox.TextChanged += (_, _) =>
+        {
+            if (_contentBox == null) return;
+            var chars = _contentBox.Text.Length;
+            var lines = _contentBox.Text.Split('\n').Length;
+            charCountTb.Text = $"{chars} chars · {lines} linhas";
+        };
+    }
+
+    // ── Tab management ────────────────────────────────────────────────────────
+
+    private void AddTab(Core.Models.Notes.Note note, bool activate = true)
+    {
+        if (_tabStrip == null) return;
+
+        var label = new TextBlock
+        {
+            Text = TruncateTitle(note.Title),
+            FontSize = 12,
+            Foreground = new SolidColorBrush(CMuted),
+            VerticalAlignment = VerticalAlignment.Center,
+            MaxWidth = 140,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
+
+        // Close button
+        var closeBtn = new TextBlock
+        {
+            Text = "×",
+            FontSize = 14,
+            Foreground = new SolidColorBrush(CMuted),
+            Margin = new Thickness(6, 0, 0, 0),
+            Cursor = Cursors.Hand,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        var tabInner = new StackPanel { Orientation = Orientation.Horizontal };
+        if (!string.IsNullOrEmpty(note.TicketNumber))
+        {
+            tabInner.Children.Add(new TextBlock
+            {
+                Text = "🔗 ",
+                FontSize = 10,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 2, 0),
+                Opacity = 0.6,
+            });
+        }
+        tabInner.Children.Add(label);
+        tabInner.Children.Add(closeBtn);
+
+        var tab = new Border
+        {
+            Background = new SolidColorBrush(CSurface2),
+            BorderBrush = new SolidColorBrush(CBorder),
+            BorderThickness = new Thickness(1, 1, 1, 0),
+            CornerRadius = new CornerRadius(6, 6, 0, 0),
+            Padding = new Thickness(12, 7, 10, 7),
+            Margin = new Thickness(0, 4, 3, 0),
+            Cursor = Cursors.Hand,
+            Child = tabInner,
+        };
+
+        var entry = new TabEntry(note, tab, label);
+        _tabs[note.Id] = entry;
+
+        tab.MouseLeftButtonUp += (_, e) =>
+        {
+            if (e.Source == closeBtn) return;
+            ActivateTab(note);
+        };
+        closeBtn.MouseLeftButtonUp += (_, _) => CloseTab(note);
+        closeBtn.MouseEnter += (_, _) => closeBtn.Foreground = new SolidColorBrush(CRed);
+        closeBtn.MouseLeave += (_, _) => closeBtn.Foreground = new SolidColorBrush(CMuted);
+        tab.MouseEnter += (_, _) => { if (_activeNote?.Id != note.Id) tab.Background = new SolidColorBrush(Color.FromRgb(0x1E, 0x26, 0x33)); };
+        tab.MouseLeave += (_, _) => { if (_activeNote?.Id != note.Id) tab.Background = new SolidColorBrush(CSurface2); };
+
+        // Insert before any "+" button placeholder
+        _tabStrip.Children.Add(tab);
+
+        if (activate)
+            ActivateTab(note);
+    }
+
+    private void ActivateTab(Core.Models.Notes.Note note)
+    {
+        // Deactivate all
+        foreach (var e in _tabs.Values)
+        {
+            e.Tab.Background = new SolidColorBrush(CSurface2);
+            e.Tab.BorderBrush = new SolidColorBrush(CBorder);
+            e.Label.Foreground = new SolidColorBrush(CMuted);
+        }
+
+        if (!_tabs.TryGetValue(note.Id, out var entry)) return;
+
+        // Activate
+        entry.Tab.Background = new SolidColorBrush(CSurface);
+        entry.Tab.BorderBrush = new SolidColorBrush(CAccent);
+        entry.Label.Foreground = new SolidColorBrush(CText);
+
+        _activeNote = note;
+        LoadNoteIntoEditor(note);
+        HideEmptyState();
+    }
+
+    private void CloseTab(Core.Models.Notes.Note note)
+    {
+        if (!_tabs.TryGetValue(note.Id, out var entry)) return;
+
+        // Save before closing
+        if (_activeNote?.Id == note.Id)
+            SaveActive();
+
+        _tabStrip?.Children.Remove(entry.Tab);
+        _tabs.Remove(note.Id);
+
+        if (_activeNote?.Id == note.Id)
+        {
+            _activeNote = null;
+            if (_tabs.Count > 0)
+                ActivateTab(_tabs.Values.Last().Note);
+            else
+                ShowEmptyState();
+        }
+    }
+
+    private void LoadNoteIntoEditor(Core.Models.Notes.Note note)
+    {
+        if (_titleBox == null || _contentBox == null) return;
+
+        _suppressSave = true;
+        _titleBox.IsEnabled = true;
+        _contentBox.IsEnabled = true;
+        _titleBox.Text = note.Title;
+        _contentBox.Text = note.Content;
+        _suppressSave = false;
+
+        if (_metaTb != null)
+            _metaTb.Text = $"Criada {note.CreatedAt:dd/MM/yyyy HH:mm}  ·  Editada {note.UpdatedAt:dd/MM/yyyy HH:mm}";
+
+        UpdateIncidentBadge(note);
+        RebuildIncidentPicker();
+    }
+
+    private void UpdateIncidentBadge(Core.Models.Notes.Note note)
+    {
+        if (_incidentBadge == null || _incidentBadgeTb == null) return;
+        if (!string.IsNullOrEmpty(note.TicketNumber))
+        {
+            _incidentBadgeTb.Text = $"🔗 {note.TicketNumber}  {note.IncidentTitle ?? ""}".Trim();
+            _incidentBadge.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            _incidentBadge.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    // ── Incident picker ───────────────────────────────────────────────────────
+
+    private bool _pickerOpen = false;
+
+    private void ToggleIncidentPicker()
+    {
+        if (_pickerContainer == null) return;
+        _pickerOpen = !_pickerOpen;
+        if (_pickerOpen)
+        {
+            RebuildIncidentPicker();
+            _pickerContainer.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            _pickerContainer.Visibility = Visibility.Collapsed;
+            _pickerContainer.Child = null;
+        }
+    }
+
+    private void RebuildIncidentPicker()
+    {
+        if (_pickerContainer == null) return;
+
+        // Build completely fresh every time — no reuse of visual nodes
+        var outer = new Grid();
+        outer.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // search
+        outer.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // list
+
+        var searchBox = new TextBox
+        {
+            Background = new SolidColorBrush(Color.FromRgb(0x0D, 0x11, 0x17)),
+            Foreground = new SolidColorBrush(CText),
+            BorderBrush = new SolidColorBrush(CBorder),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            FontSize = 12,
+            Padding = new Thickness(14, 8, 14, 8),
+            CaretBrush = new SolidColorBrush(CAccent),
+        };
+        Grid.SetRow(searchBox, 0);
+        outer.Children.Add(searchBox);
+
+        var listPanel = new StackPanel();
+        var listSv = new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            MaxHeight = 180,
+            Content = listPanel,
+        };
+        Grid.SetRow(listSv, 1);
+        outer.Children.Add(listSv);
+
+        void PopulateList(string filter)
+        {
+            listPanel.Children.Clear();
+            var matches = _vm.Incidents
+                .Where(i => string.IsNullOrEmpty(filter) ||
+                    i.TicketNumber.ToLower().Contains(filter) ||
+                    i.Title.ToLower().Contains(filter) ||
+                    (i.CustomerDisplayName ?? "").ToLower().Contains(filter))
+                .Take(20);
+
+            foreach (var inc in matches)
+            {
+                var row = new Border
+                {
+                    Padding = new Thickness(14, 8, 14, 8),
+                    Cursor = Cursors.Hand,
+                    BorderBrush = new SolidColorBrush(Color.FromRgb(0x1E, 0x26, 0x33)),
+                    BorderThickness = new Thickness(0, 0, 0, 1),
+                };
+                var rowContent = new StackPanel { Orientation = Orientation.Horizontal };
+                rowContent.Children.Add(new TextBlock
+                {
+                    Text = inc.TicketNumber,
+                    FontSize = 11,
+                    FontFamily = new FontFamily("Consolas"),
+                    Foreground = new SolidColorBrush(CBlue),
+                    Margin = new Thickness(0, 0, 10, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                });
+                rowContent.Children.Add(new TextBlock
+                {
+                    Text = inc.Title.Length > 60 ? inc.Title[..60] + "…" : inc.Title,
+                    FontSize = 12,
+                    Foreground = new SolidColorBrush(CText),
+                    VerticalAlignment = VerticalAlignment.Center,
+                });
+                row.Child = rowContent;
+
+                var captured = inc;
+                row.MouseEnter += (_, _) => row.Background = new SolidColorBrush(Color.FromRgb(0x1E, 0x26, 0x33));
+                row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
+                row.MouseLeftButtonUp += (_, _) => LinkIncident(captured);
+                listPanel.Children.Add(row);
+            }
+
+            if (!listPanel.Children.Cast<UIElement>().Any())
+                listPanel.Children.Add(new TextBlock
+                {
+                    Text = "Nenhum chamado encontrado.",
+                    FontSize = 11,
+                    Foreground = new SolidColorBrush(CMuted),
+                    Padding = new Thickness(14, 8, 14, 8),
+                });
+        }
+
+        searchBox.TextChanged += (_, _) => PopulateList(searchBox.Text.ToLower());
+        PopulateList("");
+
+        // Assign fresh tree to container — no prior parent
+        _pickerContainer.Child = outer;
+    }
+
+    private void LinkIncident(IncidentSnapshot inc)
+    {
+        if (_activeNote == null) return;
+        _activeNote.IncidentId = inc.IncidentId;
+        _activeNote.IncidentTitle = inc.Title;
+        _activeNote.TicketNumber = inc.TicketNumber;
+        SaveActive();
+        UpdateIncidentBadge(_activeNote);
+        UpdateTabIcon(_activeNote);
+        ToggleIncidentPicker(); // close
+    }
+
+    private void UnlinkIncident()
+    {
+        if (_activeNote == null) return;
+        _activeNote.IncidentId = null;
+        _activeNote.IncidentTitle = null;
+        _activeNote.TicketNumber = null;
+        SaveActive();
+        UpdateIncidentBadge(_activeNote);
+        UpdateTabIcon(_activeNote);
+    }
+
+    private void UpdateTabIcon(Core.Models.Notes.Note note)
+    {
+        if (!_tabs.TryGetValue(note.Id, out var entry)) return;
+        if (entry.Tab.Child is not StackPanel sp) return;
+        // Rebuild inner
+        sp.Children.Clear();
+        if (!string.IsNullOrEmpty(note.TicketNumber))
+            sp.Children.Add(new TextBlock
+            {
+                Text = "🔗 ",
+                FontSize = 10,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 2, 0),
+                Opacity = 0.6,
+            });
+        sp.Children.Add(entry.Label);
+        var closeX = new TextBlock
+        {
+            Text = "×",
+            FontSize = 14,
+            Foreground = new SolidColorBrush(CMuted),
+            Margin = new Thickness(6, 0, 0, 0),
+            Cursor = Cursors.Hand,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        closeX.MouseLeftButtonUp += (_, _) => CloseTab(note);
+        closeX.MouseEnter += (_, _) => closeX.Foreground = new SolidColorBrush(CRed);
+        closeX.MouseLeave += (_, _) => closeX.Foreground = new SolidColorBrush(CMuted);
+        sp.Children.Add(closeX);
+    }
+
+    // ── Save / Delete ─────────────────────────────────────────────────────────
+
+    private System.Threading.Timer? _autosaveTimer;
+
+    private void OnTitleChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressSave || _activeNote == null || _titleBox == null) return;
+        _activeNote.Title = _titleBox.Text;
+        // Update tab label
+        if (_tabs.TryGetValue(_activeNote.Id, out var entry))
+            entry.Label.Text = TruncateTitle(_activeNote.Title);
+        ScheduleAutosave();
+    }
+
+    private void OnContentChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressSave || _activeNote == null || _contentBox == null) return;
+        _activeNote.Content = _contentBox.Text;
+        ScheduleAutosave();
+    }
+
+    private void ScheduleAutosave()
+    {
+        _autosaveTimer?.Dispose();
+        _autosaveTimer = new System.Threading.Timer(_ =>
+            Dispatcher.Invoke(SaveActive), null, 800, System.Threading.Timeout.Infinite);
+    }
+
+    private void SaveActive()
+    {
+        if (_activeNote == null) return;
+        _vm.SaveNote(_activeNote);
+        if (_metaTb != null)
+            _metaTb.Text = $"Criada {_activeNote.CreatedAt:dd/MM/yyyy HH:mm}  ·  Editada {_activeNote.UpdatedAt:dd/MM/yyyy HH:mm}";
+    }
+
+    private void DeleteActive()
+    {
+        if (_activeNote == null) return;
+        var res = MessageBox.Show(
+            $"Excluir a nota \"{_activeNote.Title}\"?",
+            "Confirmar exclusão",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        if (res != MessageBoxResult.Yes) return;
+
+        var toDelete = _activeNote;
+        CloseTab(toDelete);
+        _vm.DeleteNote(toDelete);
+    }
+
+    // ── New note ──────────────────────────────────────────────────────────────
+
+    private void NewNote()
+    {
+        var note = _vm.CreateNote();
+        AddTab(note, activate: true);
+    }
+
+    // ── Empty state ───────────────────────────────────────────────────────────
+
+    private Border? _emptyState;
+
+    private void ShowEmptyState()
+    {
+        if (_titleBox != null) { _titleBox.Text = ""; _titleBox.IsEnabled = false; }
+        if (_contentBox != null) { _contentBox.Text = ""; _contentBox.IsEnabled = false; }
+
+        if (_emptyState != null || _editorArea == null) return;
+
+        _emptyState = new Border
+        {
+            Background = new SolidColorBrush(CBg),
+        };
+        var center = new StackPanel
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        center.Children.Add(new TextBlock
+        {
+            Text = "📝",
+            FontSize = 48,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 16),
+        });
+        center.Children.Add(new TextBlock
+        {
+            Text = "Nenhuma nota aberta",
+            FontSize = 16,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(CMuted),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 8),
+        });
+        center.Children.Add(new TextBlock
+        {
+            Text = "Clique em \"+ Nova nota\" para começar",
+            FontSize = 13,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x3A, 0x42, 0x4F)),
+            HorizontalAlignment = HorizontalAlignment.Center,
+        });
+        _emptyState.Child = center;
+        Grid.SetRow(_emptyState, 1);
+        Grid.SetRowSpan(_emptyState, 2);
+        _editorArea.Children.Add(_emptyState);
+    }
+
+    private void HideEmptyState()
+    {
+        if (_emptyState == null || _editorArea == null) return;
+        _editorArea.Children.Remove(_emptyState);
+        _emptyState = null;
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static string TruncateTitle(string t)
+        => string.IsNullOrWhiteSpace(t) ? "Nova nota"
+         : t.Length > 22 ? t[..22] + "…"
+         : t;
+
+    private static Button ToolbarBtn(string label, Color fg) => new()
+    {
+        Content = label,
+        FontSize = 11,
+        Background = new SolidColorBrush(Color.FromArgb(0x18, fg.R, fg.G, fg.B)),
+        Foreground = new SolidColorBrush(fg),
+        BorderBrush = new SolidColorBrush(Color.FromArgb(0x44, fg.R, fg.G, fg.B)),
+        BorderThickness = new Thickness(1),
+        Cursor = Cursors.Hand,
+        Padding = new Thickness(10, 5, 10, 5),
+    };
 }

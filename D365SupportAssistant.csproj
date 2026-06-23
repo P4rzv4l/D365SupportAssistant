@@ -9,6 +9,16 @@
 		<AssemblyName>D365SupportAssistant</AssemblyName>
 		<ApplicationIcon>App\Assets\logo-roxo.ico</ApplicationIcon>
 	</PropertyGroup>
+	<ItemGroup>
+	  <Compile Remove="App\Controls\**" />
+	  <Compile Remove="App\Styles\**" />
+	  <EmbeddedResource Remove="App\Controls\**" />
+	  <EmbeddedResource Remove="App\Styles\**" />
+	  <None Remove="App\Controls\**" />
+	  <None Remove="App\Styles\**" />
+	  <Page Remove="App\Controls\**" />
+	  <Page Remove="App\Styles\**" />
+	</ItemGroup>
 
 	<ItemGroup>
 		<ApplicationDefinition Include="App\App.xaml">
@@ -27,11 +37,6 @@
 		<Content Include="App\Assets\logo-preto.ico">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</Content>
-	</ItemGroup>
-
-	<ItemGroup>
-		<Folder Include="App\Controls\" />
-		<Folder Include="App\Styles\" />
 	</ItemGroup>
 
 	<ItemGroup>

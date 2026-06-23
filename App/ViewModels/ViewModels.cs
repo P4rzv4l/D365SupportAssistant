@@ -22,6 +22,7 @@ public partial class IncidentsViewModel : ObservableObject
     private List<IncidentSnapshot> _all = [];
 
     [ObservableProperty] private string _searchText = "";
+    [ObservableProperty] private string _statusFilter = "Ativos";  // "Ativos" | "Encerrados" | "Todos"
     public ObservableCollection<IncidentSnapshot> Items { get; } = [];
 
     public IncidentsViewModel(StorageService storage) => _storage = storage;
@@ -33,16 +34,28 @@ public partial class IncidentsViewModel : ObservableObject
     }
 
     partial void OnSearchTextChanged(string value) => Refresh();
+    partial void OnStatusFilterChanged(string value) => Refresh();
 
     private void Refresh()
     {
         var q = SearchText.Trim().ToLower();
         Items.Clear();
         foreach (var s in _all.Where(s =>
-            string.IsNullOrEmpty(q) ||
-            s.TicketNumber.ToLower().Contains(q) ||
-            s.Title.ToLower().Contains(q) ||
-            (s.CustomerDisplayName ?? "").ToLower().Contains(q)))
+        {
+            // Filtro de status: state_code 0 = ativo, 1 = resolvido, 2 = cancelado
+            var passStatus = StatusFilter switch
+            {
+                "Encerrados" => s.StateCode != 0,
+                "Ativos" => s.StateCode == 0,
+                _ => true,  // "Todos"
+            };
+            if (!passStatus) return false;
+
+            return string.IsNullOrEmpty(q) ||
+                s.TicketNumber.ToLower().Contains(q) ||
+                s.Title.ToLower().Contains(q) ||
+                (s.CustomerDisplayName ?? "").ToLower().Contains(q);
+        }))
             Items.Add(s);
     }
 }
@@ -719,5 +732,69 @@ public partial class SettingsViewModel : ObservableObject
         {
             SaveStatus = $"✗ Erro: {ex.Message}";
         }
+    }
+}
+
+// ── Notes ─────────────────────────────────────────────────────────────────────
+
+public partial class NotesViewModel : ObservableObject
+{
+    private readonly StorageService _storage;
+    public ObservableCollection<Core.Models.Notes.Note> Notes { get; } = [];
+
+    // Chamados disponíveis para vincular
+    private List<IncidentSnapshot> _incidents = [];
+    public List<IncidentSnapshot> Incidents => _incidents;
+
+    public NotesViewModel(StorageService storage)
+    {
+        _storage = storage;
+        Load();
+    }
+
+    public void Load()
+    {
+        Notes.Clear();
+        foreach (var n in _storage.GetAllNotes())
+            Notes.Add(n);
+    }
+
+    public void UpdateIncidents(List<IncidentSnapshot> snapshots)
+    {
+        _incidents = snapshots;
+    }
+
+    public Core.Models.Notes.Note CreateNote(string? incidentId = null, string? incidentTitle = null, string? ticketNumber = null)
+    {
+        var note = new Core.Models.Notes.Note
+        {
+            Title = incidentId != null ? $"Nota — {ticketNumber}" : "Nova nota",
+            Content = "",
+            IncidentId = incidentId,
+            IncidentTitle = incidentTitle,
+            TicketNumber = ticketNumber,
+            Color = "#1E2530",
+        };
+        _storage.SaveNote(note);
+        Notes.Insert(0, note);
+        return note;
+    }
+
+    public void SaveNote(Core.Models.Notes.Note note)
+    {
+        _storage.SaveNote(note);
+        // bubble UpdatedAt change
+        var idx = Notes.IndexOf(note);
+        if (idx > 0)
+        {
+            Notes.RemoveAt(idx);
+            Notes.Insert(0, note);
+        }
+    }
+
+    public void DeleteNote(Core.Models.Notes.Note note)
+    {
+        _storage.DeleteNote(note.Id);
+        Notes.Remove(note);
     }
 }
