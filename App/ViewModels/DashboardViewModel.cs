@@ -1,8 +1,4 @@
-﻿// =============================================================================
-//  DashboardViewModel.cs — ViewModel do Dashboard
-// =============================================================================
-
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using D365Assistant.Core.Models.Incident;
 using D365Assistant.Core.Services;

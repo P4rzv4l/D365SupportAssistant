@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 
@@ -84,11 +85,10 @@ public partial class DashboardView : Page
 
         RenderTable();
     }
-
+   
     // ══════════════════════════════════════════════════════════════════════════
     //  ROOT LAYOUT
     // ══════════════════════════════════════════════════════════════════════════
-
     private UIElement BuildRoot()
     {
         var root = new Grid { Background = new SolidColorBrush(CBg) };
