@@ -48,7 +48,10 @@ public class StorageService : IDisposable
                 bz_sai             INTEGER,
                 bz_motivo_status   TEXT,
                 bz_total_horas     REAL,
-                customer_name      TEXT
+                customer_name      TEXT,
+                bz_status_kpi_first    INTEGER,
+                bz_status_kpi_resolveby INTEGER,
+                created_on             TEXT
             );
             CREATE TABLE IF NOT EXISTS alert_history (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -116,6 +119,9 @@ public class StorageService : IDisposable
             "ALTER TABLE incidents ADD COLUMN customer_name TEXT",
             "ALTER TABLE incidents ADD COLUMN case_type_code INTEGER",
             "ALTER TABLE time_entries ADD COLUMN description TEXT DEFAULT ''",
+            "ALTER TABLE incidents ADD COLUMN bz_status_kpi_first INTEGER",
+            "ALTER TABLE incidents ADD COLUMN bz_status_kpi_resolveby INTEGER",
+            "ALTER TABLE incidents ADD COLUMN created_on TEXT",
         })
         {
             try { conn.Execute(sql); }
@@ -171,9 +177,10 @@ public class StorageService : IDisposable
                         incident_id,ticket_number,title,state_code,status_code,priority_code,
                         case_type_code,modified_on,first_seen_at,last_seen_at,alert_count,
                         bzp_nome_cliente,bzp_url,bz_horas_esgotadas,bz_sai,bz_motivo_status,
-                        bz_total_horas,customer_name)
+                        bz_total_horas,customer_name,bz_status_kpi_first,bz_status_kpi_resolveby,
+                        created_on)
                     VALUES (@id,@tn,@t,@sc,@stc,@pc,@ctc,@mod,@first,@last,0,
-                        @bnc,@burl,@bhe,@bsai,@bms,@bth,@cn)
+                        @bnc,@burl,@bhe,@bsai,@bms,@bth,@cn,@kpif,@kpir,@creon)
                     ON CONFLICT(incident_id) DO UPDATE SET
                         ticket_number=excluded.ticket_number, title=excluded.title,
                         state_code=excluded.state_code, status_code=excluded.status_code,
@@ -182,7 +189,10 @@ public class StorageService : IDisposable
                         bzp_nome_cliente=excluded.bzp_nome_cliente, bzp_url=excluded.bzp_url,
                         bz_horas_esgotadas=excluded.bz_horas_esgotadas, bz_sai=excluded.bz_sai,
                         bz_motivo_status=excluded.bz_motivo_status, bz_total_horas=excluded.bz_total_horas,
-                        customer_name=excluded.customer_name";
+                        customer_name=excluded.customer_name,
+                        bz_status_kpi_first=excluded.bz_status_kpi_first,
+                        bz_status_kpi_resolveby=excluded.bz_status_kpi_resolveby,
+                        created_on=excluded.created_on";
 
                 upsert.Parameters.AddWithValue("@id", inc.IncidentId);
                 upsert.Parameters.AddWithValue("@tn", inc.TicketNumber);
@@ -201,9 +211,50 @@ public class StorageService : IDisposable
                 upsert.Parameters.AddWithValue("@bms", (object?)inc.BzMotivoStatus ?? DBNull.Value);
                 upsert.Parameters.AddWithValue("@bth", (object?)inc.BzTotalHoras ?? DBNull.Value);
                 upsert.Parameters.AddWithValue("@cn", (object?)inc.CustomerName ?? DBNull.Value);
+                upsert.Parameters.AddWithValue("@kpif", (object?)inc.BzStatusKpiFirst ?? DBNull.Value);
+                upsert.Parameters.AddWithValue("@kpir", (object?)inc.BzStatusKpiResolveby ?? DBNull.Value);
+                upsert.Parameters.AddWithValue("@creon", inc.CreatedOn == default ? DBNull.Value : inc.CreatedOn.ToString("o"));
                 upsert.ExecuteNonQuery();
             }
             tx.Commit();
+        }
+    }
+
+    /// <summary>
+    /// Marca como encerrado (state_code=1) todo chamado que estava ativo no banco
+    /// mas não está na lista de IDs retornados pelo Dataverse neste ciclo.
+    /// Retorna quantos foram encerrados.
+    /// </summary>
+    public int MarkClosedExcept(IEnumerable<string> activeIncidentIds)
+    {
+        var ids = activeIncidentIds.ToHashSet();
+        lock (_lock)
+        {
+            using var conn = Open();
+            using var tx = conn.BeginTransaction();
+
+            // Busca todos os que estão ativos no banco
+            using var sel = conn.CreateCommand();
+            sel.Transaction = tx;
+            sel.CommandText = "SELECT incident_id FROM incidents WHERE state_code=0";
+            var inDb = new List<string>();
+            using (var r = sel.ExecuteReader())
+                while (r.Read()) inDb.Add(r.GetString(0));
+
+            // Quem estava ativo e não voltou → encerrado
+            var toClose = inDb.Where(id => !ids.Contains(id)).ToList();
+            foreach (var id in toClose)
+            {
+                using var upd = conn.CreateCommand();
+                upd.Transaction = tx;
+                upd.CommandText = "UPDATE incidents SET state_code=1, status_code=5, last_seen_at=@now WHERE incident_id=@id";
+                upd.Parameters.AddWithValue("@now", UtcNow());
+                upd.Parameters.AddWithValue("@id", id);
+                upd.ExecuteNonQuery();
+            }
+
+            tx.Commit();
+            return toClose.Count;
         }
     }
 
@@ -217,7 +268,8 @@ public class StorageService : IDisposable
                 SELECT incident_id,ticket_number,title,state_code,status_code,priority_code,
                        case_type_code,modified_on,first_seen_at,last_seen_at,alert_count,
                        bzp_nome_cliente,bzp_url,bz_horas_esgotadas,bz_sai,
-                       bz_motivo_status,bz_total_horas,customer_name
+                       bz_motivo_status,bz_total_horas,customer_name,
+                       bz_status_kpi_first,bz_status_kpi_resolveby,created_on
                 FROM incidents" +
                 (activeOnly ? " WHERE state_code=0" : "") +
                 " ORDER BY first_seen_at DESC";
@@ -239,7 +291,8 @@ public class StorageService : IDisposable
                 SELECT incident_id,ticket_number,title,state_code,status_code,priority_code,
                        case_type_code,modified_on,first_seen_at,last_seen_at,alert_count,
                        bzp_nome_cliente,bzp_url,bz_horas_esgotadas,bz_sai,
-                       bz_motivo_status,bz_total_horas,customer_name
+                       bz_motivo_status,bz_total_horas,customer_name,
+                       bz_status_kpi_first,bz_status_kpi_resolveby,created_on
                 FROM incidents WHERE incident_id=@id";
             cmd.Parameters.AddWithValue("@id", incidentId);
             using var r = cmd.ExecuteReader();
@@ -470,6 +523,11 @@ public class StorageService : IDisposable
             BzMotivoStatus = n > 15 && !r.IsDBNull(15) ? r.GetString(15) : null,
             BzTotalHoras = n > 16 && !r.IsDBNull(16) ? r.GetDouble(16) : null,
             CustomerName = n > 17 && !r.IsDBNull(17) ? r.GetString(17) : null,
+            BzStatusKpiFirst = n > 18 && !r.IsDBNull(18) ? r.GetInt32(18) : null,
+            BzStatusKpiResolveby = n > 19 && !r.IsDBNull(19) ? r.GetInt32(19) : null,
+            CreatedOn = n > 20 && !r.IsDBNull(20)
+                                        ? DateTime.Parse(r.GetString(20))
+                                        : default,
         };
     }
 
@@ -506,44 +564,6 @@ public class StorageService : IDisposable
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT id,title,content,incident_id,incident_title,ticket_number,color,created_at,updated_at FROM notes ORDER BY updated_at DESC";
             return ReadNotes(cmd);
-        }
-    }
-
-    /// <summary>
-    /// Marca como encerrado (state_code=1) todo chamado que estava ativo no banco
-    /// mas não está na lista de IDs retornados pelo Dataverse neste ciclo.
-    /// Retorna quantos foram encerrados.
-    /// </summary>
-    public int MarkClosedExcept(IEnumerable<string> activeIncidentIds)
-    {
-        var ids = activeIncidentIds.ToHashSet();
-        lock (_lock)
-        {
-            using var conn = Open();
-            using var tx = conn.BeginTransaction();
-
-            // Busca todos os que estão ativos no banco
-            using var sel = conn.CreateCommand();
-            sel.Transaction = tx;
-            sel.CommandText = "SELECT incident_id FROM incidents WHERE state_code=0";
-            var inDb = new List<string>();
-            using (var r = sel.ExecuteReader())
-                while (r.Read()) inDb.Add(r.GetString(0));
-
-            // Quem estava ativo e não voltou → encerrado
-            var toClose = inDb.Where(id => !ids.Contains(id)).ToList();
-            foreach (var id in toClose)
-            {
-                using var upd = conn.CreateCommand();
-                upd.Transaction = tx;
-                upd.CommandText = "UPDATE incidents SET state_code=1, status_code=5, last_seen_at=@now WHERE incident_id=@id";
-                upd.Parameters.AddWithValue("@now", UtcNow());
-                upd.Parameters.AddWithValue("@id", id);
-                upd.ExecuteNonQuery();
-            }
-
-            tx.Commit();
-            return toClose.Count;
         }
     }
 

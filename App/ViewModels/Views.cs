@@ -234,8 +234,9 @@ public partial class IncidentsView : Page
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(100) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
         row.Child = grid;
 
         // Ticket number
@@ -326,6 +327,40 @@ public partial class IncidentsView : Page
         };
         Grid.SetColumn(stateBadge, 4);
         grid.Children.Add(stateBadge);
+
+        // SLA 1º Atendimento badge
+        // 419500002 = cumprido, 419500000 = em andamento, null = não aplicável
+        var (slaText, slaFg, slaBg) = snap.BzStatusKpiFirst switch
+        {
+            419500000 => ("✓ SLA OK", CGreen, Color.FromArgb(0x22, CGreen.R, CGreen.G, CGreen.B)),
+            419500002 => ("⏱ SLA Pend.", CYellow, Color.FromArgb(0x22, CYellow.R, CYellow.G, CYellow.B)),
+            _ => ("— SLA", CMuted, Color.FromArgb(0x10, CMuted.R, CMuted.G, CMuted.B)),
+        };
+        var slaBadge = new Border
+        {
+            Background = new SolidColorBrush(slaBg),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0x55, slaFg.R, slaFg.G, slaFg.B)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(8, 3, 8, 3),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            ToolTip = snap.BzStatusKpiFirst switch
+            {
+                419500000 => "SLA de primeiro atendimento cumprido",
+                419500002 => "SLA de primeiro atendimento em andamento",
+                _ => "SLA de primeiro atendimento não disponível",
+            },
+            Child = new TextBlock
+            {
+                Text = slaText,
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(slaFg),
+            },
+        };
+        Grid.SetColumn(slaBadge, 5);
+        grid.Children.Add(slaBadge);
 
         return row;
     }

@@ -1,4 +1,8 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+﻿// =============================================================================
+//  DashboardViewModel.cs — ViewModel do Dashboard
+// =============================================================================
+
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using D365Assistant.Core.Models.Incident;
 using D365Assistant.Core.Services;
@@ -58,23 +62,23 @@ public partial class DashboardViewModel : ObservableObject
 
         var now = DateTime.UtcNow;
 
-        // KPIs
-        TotalAtivo = snapshots.Count;
-        Urgentes = snapshots.Count(s => s.PriorityCode == 419500000);
-        AltaPrioridade = snapshots.Count(s => s.PriorityCode == 1);
-        HorasEsgotadas = snapshots.Count(s => s.BzHorasEsgotadas);
+        // KPIs — apenas chamados ativos (StateCode = 0)
+        var ativos = snapshots.Where(s => s.StateCode == 0).ToList();
+        TotalAtivo = ativos.Count;
+        Urgentes = ativos.Count(s => s.PriorityCode == 419500000);
+        AltaPrioridade = ativos.Count(s => s.PriorityCode == 1);
+        HorasEsgotadas = ativos.Count(s => s.BzHorasEsgotadas);
         NovosHoje = newToday;
-        SemPrimeiraCom = snapshots.Count(s => !s.FirstResponseSent);
+        SemPrimeiraCom = ativos.Count(s => !s.FirstResponseSent);
         LastUpdated = $"Atualizado {DateTime.Now:HH:mm:ss}";
 
-        // Risco de SLA — chamados onde restam ≤ SlaWarningHours horas
-        RiscoSla = snapshots.Count(s =>
+        RiscoSla = ativos.Count(s =>
         {
             var slaH = SlaHours.GetValueOrDefault(s.PriorityCode ?? 2, 8);
             var first = s.FirstSeenAt.ToUniversalTime();
             var elapsed = (now - first).TotalHours;
             var left = slaH - elapsed;
-            return left <= 2 && left >= -24; // em risco ou vencido recente
+            return left <= 2 && left >= -24;
         });
 
         ApplyFilter();
@@ -110,16 +114,16 @@ public partial class DashboardViewModel : ObservableObject
 
         var filtered = _allSnapshots.AsEnumerable();
 
-        // Tab filter
+        // Tab filter — "Resolvidos" e "Cancelados" mostram encerrados; demais apenas ativos
         filtered = ActiveTab switch
         {
-            "Meus Chamados" => filtered.Where(s => s.StatusCode == 1),
-            "Em Atendimento" => filtered.Where(s => s.StatusCode == 1),
-            "Aguardando Cliente" => filtered.Where(s => s.StatusCode == 419500000),
-            "Aguardando Terceiros" => filtered.Where(s => s.StatusCode == 121360001),
-            "Resolvidos" => filtered.Where(s => s.StatusCode == 5),
-            "Cancelados" => filtered.Where(s => s.StatusCode == 6),
-            _ => filtered,
+            "Resolvidos" => filtered.Where(s => s.StateCode == 1 || s.StatusCode == 5),
+            "Cancelados" => filtered.Where(s => s.StateCode == 2 || s.StatusCode == 6),
+            "Meus Chamados" => filtered.Where(s => s.StateCode == 0 && s.StatusCode == 1),
+            "Em Atendimento" => filtered.Where(s => s.StateCode == 0 && s.StatusCode == 1),
+            "Aguardando Cliente" => filtered.Where(s => s.StateCode == 0 && s.StatusCode == 419500000),
+            "Aguardando Terceiros" => filtered.Where(s => s.StateCode == 0 && s.StatusCode == 121360001),
+            _ => filtered.Where(s => s.StateCode == 0), // Todos os Chamados
         };
 
         // Busca textual
@@ -133,8 +137,9 @@ public partial class DashboardViewModel : ObservableObject
         if (PriFilter != "Todas" && PriFilter != "Todos" && priMap.TryGetValue(PriFilter, out var priCode))
             filtered = filtered.Where(s => s.PriorityCode == priCode);
 
-        // Filtro status
-        if (StatusFilter != "Todos" && statusMap.TryGetValue(StatusFilter, out var stCode))
+        // Filtro status (não aplicar em abas já filtradas por state)
+        if (StatusFilter != "Todos" && statusMap.TryGetValue(StatusFilter, out var stCode)
+            && ActiveTab != "Resolvidos" && ActiveTab != "Cancelados")
             filtered = filtered.Where(s => s.StatusCode == stCode);
 
         Incidents.Clear();

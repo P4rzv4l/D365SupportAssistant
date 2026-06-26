@@ -8,7 +8,6 @@ using Microsoft.Extensions.DependencyInjection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
-using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 
@@ -41,7 +40,7 @@ public partial class DashboardView : Page
     // ── State ─────────────────────────────────────────────────────────────────
     private IncidentSnapshot? _selected;
     private int _page = 1;
-    private const int PageSize = 15;
+    private const int PageSize = 25;
     private string _activeTab = "Todos os Chamados";
 
     // ── UI refs ───────────────────────────────────────────────────────────────
@@ -85,10 +84,11 @@ public partial class DashboardView : Page
 
         RenderTable();
     }
-   
+
     // ══════════════════════════════════════════════════════════════════════════
     //  ROOT LAYOUT
     // ══════════════════════════════════════════════════════════════════════════
+
     private UIElement BuildRoot()
     {
         var root = new Grid { Background = new SolidColorBrush(CBg) };
@@ -504,6 +504,7 @@ public partial class DashboardView : Page
         HdrCell(4, "Prioridade");
         HdrCell(5, "Técnico");
         HdrCell(6, "Aberto em");
+        HdrCell(7, "SLA 1º Atend.");
 
         Grid.SetRow(hdr, 1);
         root.Children.Add(hdr);
@@ -688,13 +689,6 @@ public partial class DashboardView : Page
             TextTrimming = TextTrimming.CharacterEllipsis,
             MaxWidth = 280,
         });
-        if (!snap.FirstResponseSent)
-            subjStack.Children.Add(new TextBlock
-            {
-                Text = "⚡ Aguardando 1ª comunicação",
-                FontSize = 9.5,
-                Foreground = new SolidColorBrush(COrange),
-            });
         Grid.SetColumn(subjStack, 1); g.Children.Add(subjStack);
 
         // Col 2: Customer
@@ -767,6 +761,54 @@ public partial class DashboardView : Page
         });
         Grid.SetColumn(dateStack, 6); g.Children.Add(dateStack);
 
+        // Col 7: SLA 1º Atendimento — combina BzStatusKpiFirst + FirstResponseSent
+        string slaText; string slaFgHex; string slaBgHex; string slaTooltip;
+
+        if (snap.BzStatusKpiFirst == 419500000)
+        {
+            // SLA cumprido pelo KPI
+            slaText = "✓ 1º Atend.";
+            slaFgHex = "#86EFAC";
+            slaBgHex = "#0A2010";
+            slaTooltip = "SLA de primeiro atendimento cumprido";
+        }
+        else
+        {
+            // Nunca enviou 1ª comunicação e KPI ainda não cumprido
+            slaText = "⚡ Ag. 1ª Com.";
+            slaFgHex = "#FB923C";
+            slaBgHex = "#2D1500";
+            slaTooltip = "Aguardando envio da 1ª comunicação ao cliente";
+        }
+        //else if (!snap.FirstResponseSent)
+        //{
+        //    // Nunca enviou 1ª comunicação e KPI ainda não cumprido
+        //    slaText = "⚡ Ag. 1ª Com.";
+        //    slaFgHex = "#FB923C";
+        //    slaBgHex = "#2D1500";
+        //    slaTooltip = "Aguardando envio da 1ª comunicação ao cliente";
+        //}
+        //else if (snap.BzStatusKpiFirst == 419500000)
+        //{
+        //    // 1ª comunicação enviada mas KPI ainda pendente
+        //    slaText = "⏱ SLA Pend.";
+        //    slaFgHex = "#FCD34D";
+        //    slaBgHex = "#3B2A00";
+        //    slaTooltip = "1ª comunicação enviada — SLA de primeiro atendimento em andamento";
+        //}
+        //else
+        //{
+        //    slaText = "— SLA";
+        //    slaFgHex = "#4B5663";
+        //    slaBgHex = "#1A2029";
+        //    slaTooltip = "SLA de primeiro atendimento não disponível";
+        //}
+
+        var slaBadge = DarkBadge(slaText, slaFgHex, slaBgHex, margin: new Thickness(8, 0, 8, 0));
+        slaBadge.VerticalAlignment = VerticalAlignment.Center;
+        slaBadge.ToolTip = slaTooltip;
+        Grid.SetColumn(slaBadge, 7); g.Children.Add(slaBadge);
+
         return row;
     }
 
@@ -780,6 +822,7 @@ public partial class DashboardView : Page
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });  // priority
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(50) });  // tech
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) }); // date
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) }); // SLA 1º atend
         return g;
     }
 
@@ -953,6 +996,16 @@ public partial class DashboardView : Page
         InfoItem(leftInfo, "Aberto em", snap.CreatedOn.ToLocalTime().ToString("dd/MM/yyyy HH:mm"));
         InfoItem(rightInfo, "Técnico Responsável", snap.OwnerName ?? "—");
         InfoItem(rightInfo, "Última Atualização", snap.ModifiedOn.ToLocalTime().ToString("dd/MM/yyyy HH:mm"));
+
+        // SLA 1º Atendimento — combina BzStatusKpiFirst + FirstResponseSent
+        var (slaInfoText, slaInfoColor) = snap.BzStatusKpiFirst == 419500002
+            ? ("✓ Cumprido", CGreen)
+            : !snap.FirstResponseSent
+                ? ("⚡ Ag. 1ª Comunicação", COrange)
+                : snap.BzStatusKpiFirst == 419500000
+                    ? ("⏱ Pendente", CYellow)
+                    : ("— N/D", CTextSub);
+        InfoItem(leftInfo, "SLA 1º Atendimento", slaInfoText, slaInfoColor);
 
         if (!string.IsNullOrEmpty(snap.Description))
             InfoItem(leftInfo, "Descrição", snap.Description, CTextSub);
