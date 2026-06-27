@@ -24,6 +24,7 @@ using D365Assistant.Views.Dashboard.Theme;
 using D365Assistant.Views.Todo.Components;
 using D365Assistant.Views.Todo.Helpers;
 using D365Assistant.Views.Todo.Sections;
+using D365Assistant.Views.Todo.Sections.Kanban;
 using Microsoft.Toolkit.Uwp.Notifications;
 using System.Collections.Specialized;
 using System.ComponentModel;
@@ -58,7 +59,14 @@ public partial class TodoView : Page
     private string _activeTab = TabLabels.Mine;
     private string _statusFilter = "Todos";
 
-    // ── Sort / Period state ───────────────────────────────────────────────────
+    // ── View mode ─────────────────────────────────────────────────────────────
+    private enum ViewMode { List, Kanban }
+    private ViewMode _viewMode = ViewMode.List;
+    private TodoKanbanView? _kanbanView;
+    private UIElement? _kanbanRoot;
+    private UIElement? _listRoot;
+    private Grid? _contentGrid;   // grid col0=table col1=detail
+    private Button? _btnToggleView;
     private Func<string?>? _getPeriod;
     private Func<string?>? _getSort;
 
@@ -431,7 +439,7 @@ public partial class TodoView : Page
         sortHost.Margin = new Thickness(0, 0, 12, 0);
         right.Children.Add(sortHost);
 
-        var btnGrid = new Button
+        _btnToggleView = new Button
         {
             Content = "⊞",
             FontSize = 14,
@@ -441,29 +449,89 @@ public partial class TodoView : Page
             BorderThickness = new Thickness(1),
             Cursor = Cursors.Hand,
             Padding = new Thickness(8, 4, 8, 4),
+            ToolTip = "Alternar entre lista e Kanban",
         };
-        right.Children.Add(btnGrid);
+        _btnToggleView.Click += (_, _) => ToggleViewMode();
+        right.Children.Add(_btnToggleView);
 
         return right;
+    }
+
+    // ── View mode toggle ──────────────────────────────────────────────────────
+
+    private void ToggleViewMode()
+    {
+        _viewMode = _viewMode == ViewMode.List ? ViewMode.Kanban : ViewMode.List;
+
+        if (_btnToggleView != null)
+        {
+            _btnToggleView.Content = _viewMode == ViewMode.Kanban ? "☰" : "⊞";
+            _btnToggleView.Foreground = _viewMode == ViewMode.Kanban
+                ? DashboardTheme.Brush(DashboardTheme.Accent)
+                : DashboardTheme.Brush(DashboardTheme.TextSub);
+        }
+
+        if (_viewMode == ViewMode.Kanban) ShowKanban();
+        else ShowList();
+    }
+
+    private void ShowKanban()
+    {
+        if (_listRoot != null) _listRoot.Visibility = Visibility.Collapsed;
+
+        if (_kanbanView == null)
+        {
+            _kanbanView = new TodoKanbanView(
+                _vm,
+                onCardClick: item =>
+                {
+                    if (_detailPanel == null || _detailContent == null) return;
+                    _detailPanel.Visibility = Visibility.Visible;
+                    _detailContent.Children.Clear();
+                    _detailBuilder?.Populate(_detailContent, item);
+                },
+                onItemChanged: RequestRefresh);
+
+            _kanbanRoot = _kanbanView.Build(GetFilteredItems());
+
+            if (_contentGrid != null)
+            {
+                Grid.SetColumn(_kanbanRoot, 0);
+                _contentGrid.Children.Insert(0, _kanbanRoot);
+            }
+        }
+        else
+        {
+            _kanbanRoot!.Visibility = Visibility.Visible;
+            _kanbanView.Populate(GetFilteredItems());
+        }
+    }
+
+    private void ShowList()
+    {
+        if (_kanbanRoot != null) _kanbanRoot.Visibility = Visibility.Collapsed;
+        if (_listRoot != null) _listRoot.Visibility = Visibility.Visible;
+        RequestRefresh();
     }
 
     // ── Content ───────────────────────────────────────────────────────────────
 
     private UIElement BuildContent()
     {
-        var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        _contentGrid = new Grid();
+        _contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        _contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var tableArea = BuildTableArea();
+        _listRoot = tableArea;
         Grid.SetColumn(tableArea, 0);
-        grid.Children.Add(tableArea);
+        _contentGrid.Children.Add(tableArea);
 
         _detailPanel = BuildDetailPanel();
         Grid.SetColumn(_detailPanel, 1);
-        grid.Children.Add(_detailPanel);
+        _contentGrid.Children.Add(_detailPanel);
 
-        return grid;
+        return _contentGrid;
     }
 
     private UIElement BuildTableArea()

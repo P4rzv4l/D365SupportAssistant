@@ -589,6 +589,16 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string _teamsWebhook = "";
     [ObservableProperty] private bool _teamsEnabled = true;
     [ObservableProperty] private bool _desktopEnabled = true;
+    // Schedule de alertas
+    [ObservableProperty] private string _scheduleStartTime = "08:00";
+    [ObservableProperty] private string _scheduleEndTime = "18:00";
+    [ObservableProperty] private bool _schedSun = false;
+    [ObservableProperty] private bool _schedMon = true;
+    [ObservableProperty] private bool _schedTue = true;
+    [ObservableProperty] private bool _schedWed = true;
+    [ObservableProperty] private bool _schedThu = true;
+    [ObservableProperty] private bool _schedFri = true;
+    [ObservableProperty] private bool _schedSat = false;
     // AI
     [ObservableProperty] private bool _aiEnabled = false;
     [ObservableProperty] private string _geminiApiKey = "";
@@ -618,6 +628,18 @@ public partial class SettingsViewModel : ObservableObject
         TeamsWebhook = _settings.Notifications.TeamsWebhookUrl;
         TeamsEnabled = _settings.Notifications.TeamsEnabled;
         DesktopEnabled = _settings.Notifications.DesktopEnabled;
+        // Schedule
+        var sched = _settings.Notifications.Schedule;
+        ScheduleStartTime = sched.StartTime;
+        ScheduleEndTime = sched.EndTime;
+        var days = sched.AllowedDays.Split(',').Select(d => d.Trim()).ToHashSet();
+        SchedSun = days.Contains("Sun");
+        SchedMon = days.Contains("Mon");
+        SchedTue = days.Contains("Tue");
+        SchedWed = days.Contains("Wed");
+        SchedThu = days.Contains("Thu");
+        SchedFri = days.Contains("Fri");
+        SchedSat = days.Contains("Sat");
         AiEnabled = _settings.AI.Enabled;
         GeminiApiKey = _settings.AI.GeminiApiKey;
         GeminiModel = _settings.AI.GeminiModel;
@@ -648,7 +670,22 @@ public partial class SettingsViewModel : ObservableObject
                 {
                     TeamsWebhookUrl = TeamsWebhook,
                     TeamsEnabled,
-                    DesktopEnabled
+                    DesktopEnabled,
+                    Schedule = new
+                    {
+                        AllowedDays = string.Join(",", new[]
+                        {
+                            SchedSun ? "Sun" : null,
+                            SchedMon ? "Mon" : null,
+                            SchedTue ? "Tue" : null,
+                            SchedWed ? "Wed" : null,
+                            SchedThu ? "Thu" : null,
+                            SchedFri ? "Fri" : null,
+                            SchedSat ? "Sat" : null,
+                        }.OfType<string>()),
+                        StartTime = ScheduleStartTime,
+                        EndTime = ScheduleEndTime,
+                    }
                 },
                 AI = new { Enabled = AiEnabled, GeminiApiKey, GeminiModel },
                 Database = new { _settings.Database.Path },
@@ -659,13 +696,16 @@ public partial class SettingsViewModel : ObservableObject
             var newJson = System.Text.Json.JsonSerializer.Serialize(newSettings, options);
             System.IO.File.WriteAllText(path, newJson);
 
-            SaveStatus = "✓ Configurações salvas. Reinicie o app para aplicar.";
+            OnSaveSuccess?.Invoke();
         }
         catch (Exception ex)
         {
             SaveStatus = $"✗ Erro ao salvar: {ex.Message}";
         }
     }
+
+    /// <summary>Chamado pela View após salvar com sucesso para exibir o diálogo de reinício.</summary>
+    public Action? OnSaveSuccess { get; set; }
 
     [RelayCommand]
     public void DeleteTokenCache()

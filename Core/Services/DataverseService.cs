@@ -44,6 +44,7 @@ public class DataverseService : IDataverseService
         "bz_total_horas", "bz_horas_faturaveis",
         "bz_historico_ocorrencia", "bz_status_kpi_first",
         "bz_status_kpi_resolveby", "_entitlementid_value",
+        "customersatisfactioncode",
     ];
 
     private static readonly string[] ExpandFields =
@@ -214,6 +215,7 @@ public class DataverseService : IDataverseService
             BzHistoricoOcorrencia = r.BzHistoricoOcorrencia,
             BzStatusKpiFirst = r.BzStatusKpiFirst,
             BzStatusKpiResolveby = r.BzStatusKpiResolveby,
+            CustomerSatisfactionCode = r.CustomerSatisfactionCode,
             CustomerName = r.CustomerAccount?.Name
                                     ?? GetString(customerFallbackEl),
             OwnerName = GetString(ownerEl),
@@ -263,6 +265,7 @@ internal class RawIncident
     [JsonPropertyName("bz_historico_ocorrencia")] public string? BzHistoricoOcorrencia { get; set; }
     [JsonPropertyName("bz_status_kpi_first")] public int? BzStatusKpiFirst { get; set; }
     [JsonPropertyName("bz_status_kpi_resolveby")] public int? BzStatusKpiResolveby { get; set; }
+    [JsonPropertyName("customersatisfactioncode")] public int? CustomerSatisfactionCode { get; set; }
     [JsonPropertyName("customerid_account")] public AccountRef? CustomerAccount { get; set; }
 
     [JsonExtensionData]

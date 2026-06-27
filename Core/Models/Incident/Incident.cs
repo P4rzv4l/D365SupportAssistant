@@ -31,6 +31,7 @@ namespace D365Assistant.Core.Models.Incident
         public string? BzHistoricoOcorrencia { get; set; }
         public int? BzStatusKpiFirst { get; set; }
         public int? BzStatusKpiResolveby { get; set; }
+        public int? CustomerSatisfactionCode { get; set; }
         public string? EntitlementId { get; set; }
         public string? CustomerName { get; set; }
         public string? OwnerName { get; set; }

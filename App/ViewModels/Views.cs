@@ -1130,8 +1130,8 @@ public partial class TrackerView : Page
                 ? $"{(int)dayTs.TotalHours}h {dayTs.Minutes:D2}m"
                 : $"{dayTs.Minutes}m {dayTs.Seconds:D2}s";
             var dayLabel = dayDate == DateTime.Today ? "Hoje"
-                         : dayDate == DateTime.Today.AddDays(-1) ? "Ontem"
-                         : dayDate.ToString("ddd, dd/MM/yyyy", new System.Globalization.CultureInfo("pt-BR"));
+                             : dayDate == DateTime.Today.AddDays(-1) ? "Ontem"
+                             : dayDate.ToString("ddd, dd/MM/yyyy", new System.Globalization.CultureInfo("pt-BR"));
 
             var dayCard = new Border
             {
@@ -1758,6 +1758,111 @@ public partial class SettingsView : Page
         }
 
         // Botões
+        // ── Seção: Horário de Alertas ─────────────────────────────────────────
+        stack.Children.Add(SectionTitle("🕐  Horário de Alertas"));
+        var schedCard = MakeCard();
+        var schedStack = new StackPanel { Margin = new Thickness(16, 14, 16, 14) };
+        schedCard.Child = schedStack;
+
+        // Dias da semana
+        schedStack.Children.Add(new TextBlock
+        {
+            Text = "Dias permitidos para envio de alertas",
+            FontSize = 11,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x8B, 0x94, 0x9E)),
+            Margin = new Thickness(0, 0, 0, 8),
+        });
+
+        var daysRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 14) };
+        void DayToggle(string label, string prop)
+        {
+            var cb = new CheckBox
+            {
+                Content = label,
+                FontSize = 12,
+                Foreground = new SolidColorBrush(Color.FromRgb(0xE6, 0xED, 0xF3)),
+                Margin = new Thickness(0, 0, 16, 6),
+                Cursor = Cursors.Hand,
+            };
+            cb.SetBinding(CheckBox.IsCheckedProperty, new System.Windows.Data.Binding(prop)
+            {
+                Source = _vm,
+                Mode = System.Windows.Data.BindingMode.TwoWay,
+            });
+            daysRow.Children.Add(cb);
+        }
+        DayToggle("Dom", nameof(_vm.SchedSun));
+        DayToggle("Seg", nameof(_vm.SchedMon));
+        DayToggle("Ter", nameof(_vm.SchedTue));
+        DayToggle("Qua", nameof(_vm.SchedWed));
+        DayToggle("Qui", nameof(_vm.SchedThu));
+        DayToggle("Sex", nameof(_vm.SchedFri));
+        DayToggle("Sáb", nameof(_vm.SchedSat));
+        schedStack.Children.Add(daysRow);
+
+        // Horário início/fim
+        schedStack.Children.Add(new TextBlock
+        {
+            Text = "Horário de envio",
+            FontSize = 11,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x8B, 0x94, 0x9E)),
+            Margin = new Thickness(0, 0, 0, 8),
+        });
+
+        var timeRow = new StackPanel { Orientation = Orientation.Horizontal };
+        TextBox TimeInput(string prop)
+        {
+            var tb = new TextBox
+            {
+                Width = 80,
+                Background = new SolidColorBrush(Color.FromRgb(0x0D, 0x11, 0x17)),
+                Foreground = new SolidColorBrush(Color.FromRgb(0xE6, 0xED, 0xF3)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(0x30, 0x36, 0x3D)),
+                BorderThickness = new Thickness(1),
+                FontFamily = new FontFamily("Consolas"),
+                FontSize = 13,
+                Padding = new Thickness(10, 7, 10, 7),
+                TextAlignment = TextAlignment.Center,
+            };
+            tb.SetBinding(TextBox.TextProperty, new System.Windows.Data.Binding(prop)
+            {
+                Source = _vm,
+                Mode = System.Windows.Data.BindingMode.TwoWay,
+                UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.LostFocus,
+            });
+            return tb;
+        }
+        timeRow.Children.Add(new TextBlock
+        {
+            Text = "De",
+            FontSize = 12,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x8B, 0x94, 0x9E)),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0),
+        });
+        timeRow.Children.Add(TimeInput(nameof(_vm.ScheduleStartTime)));
+        timeRow.Children.Add(new TextBlock
+        {
+            Text = "até",
+            FontSize = 12,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x8B, 0x94, 0x9E)),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(12, 0, 8, 0),
+        });
+        timeRow.Children.Add(TimeInput(nameof(_vm.ScheduleEndTime)));
+        timeRow.Children.Add(new TextBlock
+        {
+            Text = "(formato HH:mm, ex: 08:00)",
+            FontSize = 10,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x4B, 0x56, 0x63)),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(12, 0, 0, 0),
+        });
+        schedStack.Children.Add(timeRow);
+        stack.Children.Add(schedCard);
+
         var btnRow = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -1778,6 +1883,9 @@ public partial class SettingsView : Page
             Command = _vm.SaveCommand,
         };
         btnRow.Children.Add(saveBtn);
+
+        // Registra callback de sucesso — exibe diálogo de reinício
+        _vm.OnSaveSuccess = () => ShowRestartDialog();
 
         var tokenBtn = new Button
         {
@@ -1805,6 +1913,93 @@ public partial class SettingsView : Page
 
         outerScroll.Content = stack;
         Content = outerScroll;
+    }
+
+    private void ShowRestartDialog()
+    {
+        // Janela de diálogo customizada
+        var dlg = new Window
+        {
+            Title = "Configurações salvas",
+            Width = 420,
+            Height = 220,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = Window.GetWindow(this),
+            ResizeMode = ResizeMode.NoResize,
+            WindowStyle = WindowStyle.ToolWindow,
+            Background = new SolidColorBrush(Color.FromRgb(0x13, 0x19, 0x20)),
+        };
+
+        var root = new StackPanel { Margin = new Thickness(28, 24, 28, 24) };
+
+        root.Children.Add(new TextBlock
+        {
+            Text = "✓  Configurações salvas com sucesso!",
+            FontSize = 15,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x22, 0xC5, 0x5E)),
+            Margin = new Thickness(0, 0, 0, 8),
+        });
+
+        root.Children.Add(new TextBlock
+        {
+            Text = "As alterações serão aplicadas após reiniciar o aplicativo.\nDeseja reiniciar agora?",
+            FontSize = 13,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8)),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 24),
+        });
+
+        var btnRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+
+        bool restart = false;
+
+        var btnLater = new Button
+        {
+            Content = "Reiniciar depois",
+            FontSize = 12,
+            Background = new SolidColorBrush(Color.FromRgb(0x1A, 0x20, 0x29)),
+            Foreground = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0x27, 0x2D, 0x38)),
+            BorderThickness = new Thickness(1),
+            Cursor = Cursors.Hand,
+            Padding = new Thickness(16, 8, 16, 8),
+            Margin = new Thickness(0, 0, 10, 0),
+        };
+        btnLater.Click += (_, _) => dlg.Close();
+
+        var btnNow = new Button
+        {
+            Content = "🔄  Reiniciar agora",
+            FontSize = 12,
+            FontWeight = FontWeights.SemiBold,
+            Background = new SolidColorBrush(Color.FromRgb(0x7C, 0x3A, 0xED)),
+            Foreground = Brushes.White,
+            BorderThickness = new Thickness(0),
+            Cursor = Cursors.Hand,
+            Padding = new Thickness(16, 8, 16, 8),
+        };
+        btnNow.Click += (_, _) => { restart = true; dlg.Close(); };
+
+        btnRow.Children.Add(btnLater);
+        btnRow.Children.Add(btnNow);
+        root.Children.Add(btnRow);
+
+        dlg.Content = root;
+        dlg.ShowDialog();
+
+        if (restart)
+        {
+            // Reinicia o processo do app e encerra o atual
+            var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+            if (!string.IsNullOrEmpty(exePath))
+                System.Diagnostics.Process.Start(exePath);
+            System.Windows.Application.Current.Shutdown();
+        }
     }
 
     private static TextBlock TitleText(string text) => new()

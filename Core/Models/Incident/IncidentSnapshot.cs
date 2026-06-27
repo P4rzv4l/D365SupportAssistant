@@ -34,6 +34,17 @@ namespace D365Assistant.Core.Models.Incident
         public string? BzHistoricoOcorrencia { get; set; }
         public int? BzStatusKpiFirst { get; set; }
         public int? BzStatusKpiResolveby { get; set; }
+        public int? CustomerSatisfactionCode { get; set; }
+
+        public string SatisfactionLabel => CustomerSatisfactionCode switch
+        {
+            5 => "Muito Satisfeito",
+            4 => "Satisfeito",
+            3 => "Neutro",
+            2 => "Insatisfeito",
+            1 => "Muito Insatisfeito",
+            _ => "Sem resposta de satisfação",
+        };
         public string? EntitlementId { get; set; }
         public string? CustomerName { get; set; }
         public string? OwnerName { get; set; }
@@ -76,6 +87,7 @@ namespace D365Assistant.Core.Models.Incident
                 BzHistoricoOcorrencia = incident.BzHistoricoOcorrencia,
                 BzStatusKpiFirst = incident.BzStatusKpiFirst,
                 BzStatusKpiResolveby = incident.BzStatusKpiResolveby,
+                CustomerSatisfactionCode = incident.CustomerSatisfactionCode,
                 EntitlementId = incident.EntitlementId,
                 CustomerName = incident.CustomerName,
                 OwnerName = incident.OwnerName,
@@ -83,11 +95,11 @@ namespace D365Assistant.Core.Models.Incident
             };
         }
 
-        public void updateFromIncident( Incident incident )
+        public void updateFromIncident(Incident incident)
         {
             LastSeenAt = DateTime.UtcNow;
 
-            if(incident.ModifiedOn != ModifiedOn)
+            if (incident.ModifiedOn != ModifiedOn)
             {
                 ModifiedOn = incident.ModifiedOn;
             }
@@ -115,6 +127,7 @@ namespace D365Assistant.Core.Models.Incident
             BzHistoricoOcorrencia = incident.BzHistoricoOcorrencia;
             BzStatusKpiFirst = incident.BzStatusKpiFirst;
             BzStatusKpiResolveby = incident.BzStatusKpiResolveby;
+            CustomerSatisfactionCode = incident.CustomerSatisfactionCode;
             EntitlementId = incident.EntitlementId;
             CustomerName = incident.CustomerName;
             OwnerName = incident.OwnerName;

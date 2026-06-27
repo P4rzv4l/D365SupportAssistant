@@ -26,6 +26,14 @@ public class NotifierService
         var list = alerts.ToList();
         if (list.Count == 0) return;
 
+        // Verifica se está dentro do horário/dia permitido
+        if (!_cfg.Notifications.Schedule.IsNowAllowed())
+        {
+            Log.Information("Notificações suprimidas fora do horário permitido ({Schedule}).",
+                $"{_cfg.Notifications.Schedule.AllowedDays} {_cfg.Notifications.Schedule.StartTime}–{_cfg.Notifications.Schedule.EndTime}");
+            return;
+        }
+
         var tasks = new List<Task>();
 
         if (_cfg.Notifications.DesktopEnabled)
