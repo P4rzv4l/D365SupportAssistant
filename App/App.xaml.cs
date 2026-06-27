@@ -86,7 +86,6 @@ public partial class App : Application
                 // ViewModels
                 services.AddSingleton<MainViewModel>();
                 services.AddTransient<DashboardViewModel>();
-                services.AddTransient<IncidentsViewModel>();
                 services.AddTransient<AlertsViewModel>();
                 services.AddTransient<TrackerViewModel>();
                 services.AddTransient<TrackerHistoryViewModel>();

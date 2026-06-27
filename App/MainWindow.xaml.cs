@@ -23,7 +23,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly TrackerViewModel _trackerVm;
     private readonly TrackerHistoryViewModel _trackerHistoryVm;
     private readonly AIViewModel _aiVm;
-    private readonly IncidentsViewModel _incidentsVm;
     private readonly WebResourcesViewModel _webResourcesVm;
     private readonly TodoViewModel _todoVm;
     private readonly NotesViewModel _notesVm;
@@ -49,7 +48,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         TrackerViewModel trackerVm,
         TrackerHistoryViewModel trackerHistoryVm,
         AIViewModel aiVm,
-        IncidentsViewModel incidentsVm,
         WebResourcesViewModel webResourcesVm,
         TodoViewModel todoVm,
         NotesViewModel notesVm,
@@ -73,7 +71,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _trackerVm = trackerVm;
         _trackerHistoryVm = trackerHistoryVm;
         _aiVm = aiVm;
-        _incidentsVm = incidentsVm;
         _webResourcesVm = webResourcesVm;
         _todoVm = todoVm;
         _notesVm = notesVm;
@@ -118,7 +115,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             page = pageName switch
             {
                 "Dashboard" => new DashboardView(_dashVm, _trackerVm, this),
-                "Incidents" => new IncidentsView(_incidentsVm),
                 "Tracker" => new TrackerView(_trackerVm, _trackerHistoryVm),
 
                 "Notes" => new NotesView(_notesVm),
@@ -228,7 +224,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _dashVm.UpdateData(e.Snapshots, e.Snapshots.Count(s =>
             (DateTime.UtcNow - s.FirstSeenAt.ToUniversalTime()).TotalHours < 24));
-        _incidentsVm.UpdateData(e.Snapshots);
         _notesVm.UpdateIncidents(e.Snapshots);
         if (e.Alerts.Count > 0)
             _alertsVm.AddAlerts(e.Alerts);

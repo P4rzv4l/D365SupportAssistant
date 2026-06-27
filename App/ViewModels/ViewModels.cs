@@ -14,52 +14,6 @@ using System.Collections.ObjectModel;
 
 namespace D365Assistant.ViewModels;
 
-// ── Incidents ─────────────────────────────────────────────────────────────────
-
-public partial class IncidentsViewModel : ObservableObject
-{
-    private readonly StorageService _storage;
-    private List<IncidentSnapshot> _all = [];
-
-    [ObservableProperty] private string _searchText = "";
-    [ObservableProperty] private string _statusFilter = "Ativos";  // "Ativos" | "Encerrados" | "Todos"
-    public ObservableCollection<IncidentSnapshot> Items { get; } = [];
-
-    public IncidentsViewModel(StorageService storage) => _storage = storage;
-
-    public void UpdateData(List<IncidentSnapshot> snapshots)
-    {
-        _all = snapshots;
-        Refresh();
-    }
-
-    partial void OnSearchTextChanged(string value) => Refresh();
-    partial void OnStatusFilterChanged(string value) => Refresh();
-
-    private void Refresh()
-    {
-        var q = SearchText.Trim().ToLower();
-        Items.Clear();
-        foreach (var s in _all.Where(s =>
-        {
-            // Filtro de status: state_code 0 = ativo, 1 = resolvido, 2 = cancelado
-            var passStatus = StatusFilter switch
-            {
-                "Encerrados" => s.StateCode != 0,
-                "Ativos" => s.StateCode == 0,
-                _ => true,  // "Todos"
-            };
-            if (!passStatus) return false;
-
-            return string.IsNullOrEmpty(q) ||
-                s.TicketNumber.ToLower().Contains(q) ||
-                s.Title.ToLower().Contains(q) ||
-                (s.CustomerDisplayName ?? "").ToLower().Contains(q);
-        }))
-            Items.Add(s);
-    }
-}
-
 // ── Alerts ────────────────────────────────────────────────────────────────────
 
 public partial class AlertsViewModel : ObservableObject
