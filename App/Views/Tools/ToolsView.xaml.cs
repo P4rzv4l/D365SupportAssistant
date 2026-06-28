@@ -1,0 +1,145 @@
+﻿// =============================================================================
+//  ToolsView.xaml.cs — Orquestrador do ToolsView (refatorado)
+// =============================================================================
+// Responsabilidade: montar layout raiz, gerenciar abas.
+// Nenhuma cor hardcoded, nenhum builder de painel aqui.
+//
+// Estrutura:
+//   Theme/
+//     ToolsTheme.cs                  — paleta de cores
+//   Components/
+//     ToolsUiFactory.cs              — primitivos de UI
+//     ToolsConverters.cs             — value converters
+//   Sections/
+//     FlowsPanelBuilder.cs           — painel placeholder de Fluxos
+//     WebResourcesPanelBuilder.cs    — painel de Recursos da Web
+//   ToolsView.xaml.cs                ← você está aqui
+// =============================================================================
+
+using D365Assistant.ViewModels;
+using D365Assistant.Views.Tools.Components;
+using D365Assistant.Views.Tools.Sections;
+using D365Assistant.Views.Tools.Theme;
+using System.Windows;
+using System.Windows.Controls;
+
+namespace D365Assistant.Views;
+
+public partial class ToolsView : Page
+{
+    // ── Dependencies ──────────────────────────────────────────────────────────
+    private readonly WebResourcesViewModel _vm;
+
+    // ── Tab refs ──────────────────────────────────────────────────────────────
+    private Button _tabFlows = null!;
+    private Button _tabWebRes = null!;
+    private Border _panelFlows = null!;
+    private Border _panelWebRes = null!;
+
+    // ── Tab labels ────────────────────────────────────────────────────────────
+    private static class Tabs
+    {
+        public const string Flows = "⚡  Fluxos";
+        public const string WebResources = "🌐  Recursos da Web";
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  CONSTRUCTOR
+    // ══════════════════════════════════════════════════════════════════════════
+
+    public ToolsView(WebResourcesViewModel vm)
+    {
+        _vm = vm;
+        DataContext = vm;
+        Title = "Ferramentas";
+        Background = ToolsTheme.Brush(ToolsTheme.Bg);
+
+        var root = new DockPanel { Margin = new Thickness(24, 20, 24, 20) };
+
+        var header = BuildHeader();
+        DockPanel.SetDock(header, Dock.Top);
+        root.Children.Add(header);
+
+        var tabBar = BuildTabBar();
+        DockPanel.SetDock(tabBar, Dock.Top);
+        root.Children.Add(tabBar);
+
+        _panelFlows = BuildPanel(FlowsPanelBuilder.Build(), visible: false);
+        DockPanel.SetDock(_panelFlows, Dock.Top);
+        root.Children.Add(_panelFlows);
+
+        _panelWebRes = BuildPanel(
+            new WebResourcesPanelBuilder(_vm).Build(), visible: true);
+        root.Children.Add(_panelWebRes);
+
+        Content = root;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  LAYOUT
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private static UIElement BuildHeader()
+    {
+        var stack = new StackPanel { Margin = new Thickness(0, 0, 0, 20) };
+
+        stack.Children.Add(new TextBlock
+        {
+            Text = "🛠️  Ferramentas",
+            FontSize = 22,
+            FontWeight = FontWeights.Bold,
+            Foreground = ToolsTheme.Brush(ToolsTheme.Text),
+        });
+
+        stack.Children.Add(new TextBlock
+        {
+            Text = "Utilitários para interagir diretamente com o ambiente Dynamics 365.",
+            FontSize = 12,
+            Foreground = ToolsTheme.Brush(ToolsTheme.TextMuted),
+            Margin = new Thickness(0, 4, 0, 0),
+        });
+
+        return stack;
+    }
+
+    private UIElement BuildTabBar()
+    {
+        var tabs = new StackPanel { Orientation = Orientation.Horizontal };
+
+        _tabFlows = ToolsUiFactory.TabButton(Tabs.Flows, active: false);
+        _tabWebRes = ToolsUiFactory.TabButton(Tabs.WebResources, active: true);
+
+        _tabFlows.Click += (_, _) => ActivateTab(showFlows: true);
+        _tabWebRes.Click += (_, _) => ActivateTab(showFlows: false);
+
+        tabs.Children.Add(_tabFlows);
+        tabs.Children.Add(_tabWebRes);
+
+        return new Border
+        {
+            BorderBrush = ToolsTheme.Brush(ToolsTheme.Surface2),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Margin = new Thickness(0, 0, 0, 20),
+            Child = tabs,
+        };
+    }
+
+    private static Border BuildPanel(UIElement content, bool visible) => new()
+    {
+        Visibility = visible ? Visibility.Visible : Visibility.Collapsed,
+        Child = content,
+    };
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  TAB SWITCHING
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private void ActivateTab(bool showFlows)
+    {
+        _panelFlows.Visibility = showFlows ? Visibility.Visible : Visibility.Collapsed;
+        _panelWebRes.Visibility = !showFlows ? Visibility.Visible : Visibility.Collapsed;
+
+        ToolsUiFactory.SetTabActive(_tabFlows, showFlows);
+        ToolsUiFactory.SetTabActive(_tabWebRes, !showFlows);
+    }
+}

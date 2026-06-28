@@ -29,11 +29,38 @@ public static class KanbanColumnMeta
             [KanbanColumn.Concluido] = new("Concluído", "#6EE7B7", "#0A1F14", "#0F3020"),
         };
 
-    /// <summary>Mapeia o status atual do TodoItem para uma coluna inicial do Kanban.</summary>
+    /// <summary>
+    /// Mapeia o TodoItem para a coluna correta.
+    /// Respeita KanbanStatus se definido manualmente; caso contrário usa a lógica de domínio.
+    /// </summary>
     public static KanbanColumn FromTodoItem(D365Assistant.Core.Models.Todo.TodoItem item)
     {
+        if (!string.IsNullOrEmpty(item.KanbanStatus)
+            && Enum.TryParse<KanbanColumn>(item.KanbanStatus, out var saved))
+            return saved;
+
         if (item.Done) return KanbanColumn.Concluido;
         if (item.IsOverdue) return KanbanColumn.Atrasado;
-        return KanbanColumn.Pendente;
+        return KanbanColumn.Novo;
+    }
+
+    /// <summary>Persiste a coluna escolhida de volta no item.</summary>
+    public static void ApplyToItem(
+        D365Assistant.Core.Models.Todo.TodoItem item,
+        KanbanColumn col)
+    {
+        item.KanbanStatus = col.ToString();
+
+        // Sincroniza Done com a coluna Concluído
+        if (col == KanbanColumn.Concluido && !item.Done)
+        {
+            item.Done = true;
+            item.DoneAt = DateTime.Now;
+        }
+        else if (col != KanbanColumn.Concluido && item.Done)
+        {
+            item.Done = false;
+            item.DoneAt = null;
+        }
     }
 }

@@ -1,6 +1,9 @@
 ﻿// =============================================================================
-//  ToolsViewModel.cs — Ferramentas > Web Resources
-//  URL, tipo de recurso e filtro de nome configuráveis diretamente na tela.
+//  ToolsViewModel.cs — Ferramentas > Web Resources (fix: HttpClient reutilizável)
+// =============================================================================
+// Fix: HttpClient.BaseAddress e DefaultRequestHeaders não podem ser modificados
+// após a primeira requisição. Solução: usar HttpRequestMessage com URL absoluta
+// e headers por request, sem tocar no cliente compartilhado.
 // =============================================================================
 
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -11,6 +14,7 @@ using D365Assistant.Core.Models.WebResource;
 using D365Assistant.Core.Services;
 using System.Collections.ObjectModel;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text.Json;
 
 namespace D365Assistant.ViewModels;
@@ -28,16 +32,15 @@ public partial class WebResourcesViewModel : ObservableObject
 
     private List<WebResource> _all = [];
 
+    // ── Observable properties ─────────────────────────────────────────────────
     [ObservableProperty] private string _environmentUrl = "";
     [ObservableProperty] private WebResourceTypeOption? _selectedType;
-
     [ObservableProperty] private string _filterText = "";
     [ObservableProperty] private string _statusText = "Configure o ambiente e clique em Buscar.";
     [ObservableProperty] private string _statusColor = "#8B949E";
     [ObservableProperty] private bool _isBusy = false;
     [ObservableProperty] private int _totalCount = 0;
     [ObservableProperty] private bool _hasResults = false;
-
     [ObservableProperty] private int _countJs = 0;
     [ObservableProperty] private int _countHtml = 0;
     [ObservableProperty] private int _countCss = 0;
@@ -47,19 +50,19 @@ public partial class WebResourcesViewModel : ObservableObject
 
     public static IReadOnlyList<WebResourceTypeOption> TypeOptions { get; } =
     [
-        new(null,  "Todos os tipos"),
-        new(1,     "HTML"),
-        new(2,     "CSS"),
-        new(3,     "JavaScript"),
-        new(4,     "XML"),
-        new(5,     "PNG"),
-        new(6,     "JPG"),
-        new(7,     "GIF"),
-        new(8,     "XAP (Silverlight)"),
-        new(9,     "XSL"),
-        new(10,    "ICO"),
-        new(11,    "SVG"),
-        new(12,    "RESX"),
+        new(null, "Todos os tipos"),
+        new(1,    "HTML"),
+        new(2,    "CSS"),
+        new(3,    "JavaScript"),
+        new(4,    "XML"),
+        new(5,    "PNG"),
+        new(6,    "JPG"),
+        new(7,    "GIF"),
+        new(8,    "XAP (Silverlight)"),
+        new(9,    "XSL"),
+        new(10,   "ICO"),
+        new(11,   "SVG"),
+        new(12,   "RESX"),
     ];
 
     public WebResourcesViewModel(HttpClient http, IAuthService auth, AppSettings cfg)
@@ -72,13 +75,15 @@ public partial class WebResourcesViewModel : ObservableObject
         _selectedType = TypeOptions[0];
     }
 
+    // ── Commands ──────────────────────────────────────────────────────────────
+
     [RelayCommand]
     public async Task SearchAsync()
     {
         var filtro = FilterText.Trim();
-        var url = ResolveUrl();
+        var baseUrl = ResolveUrl();
 
-        if (string.IsNullOrWhiteSpace(url))
+        if (string.IsNullOrWhiteSpace(baseUrl))
         {
             StatusText = "Informe a URL do ambiente Dynamics 365.";
             StatusColor = "#D29922";
@@ -103,17 +108,19 @@ public partial class WebResourcesViewModel : ObservableObject
 
         try
         {
-            await RefreshHeadersAsync(url);
+            // Obtém headers frescos a cada busca — sem mutar o HttpClient
+            var authHeaders = await _auth.GetHeadersAsync(CancellationToken.None);
 
             var filters = new List<string> { $"contains(name,'{filtro}')" };
             if (SelectedType?.Code is int typeCode)
                 filters.Add($"webresourcetype eq {typeCode}");
 
-            var select = "webresourceid,name,displayname,webresourcetype,ismanaged,modifiedon,createdon,description";
+            var select = "webresourceid,name,displayname,webresourcetype,ismanaged,modifiedon";
             var filter = string.Join(" and ", filters);
-            var apiUrl = $"webresourceset?$select={select}&$filter={filter}&$orderby=name asc";
+            var relPath = $"webresourceset?$select={select}&$filter={filter}&$orderby=name asc";
+            var apiBase = baseUrl.TrimEnd('/') + "/api/data/v9.2/";
 
-            _all = await FetchAllPagesAsync(apiUrl, url);
+            _all = await FetchAllPagesAsync(relPath, apiBase, authHeaders);
 
             foreach (var item in _all)
                 Items.Add(item);
@@ -122,7 +129,7 @@ public partial class WebResourcesViewModel : ObservableObject
             HasResults = TotalCount > 0;
             UpdateStats();
 
-            var host = new Uri(url).Host;
+            var host = new Uri(baseUrl).Host;
             StatusText = TotalCount == 0
                 ? $"Nenhum recurso encontrado para \"{filtro}\"."
                 : $"{TotalCount} recurso(s) encontrado(s) em {host}.";
@@ -159,9 +166,10 @@ public partial class WebResourcesViewModel : ObservableObject
         Items.Clear();
         var filtered = string.IsNullOrEmpty(q)
             ? _all
-            : _all.Where(i => i.Name.ToLower().Contains(q) || i.DisplayName.ToLower().Contains(q)).ToList();
-        foreach (var item in filtered)
-            Items.Add(item);
+            : _all.Where(i =>
+                i.Name.ToLower().Contains(q) ||
+                i.DisplayName.ToLower().Contains(q)).ToList();
+        foreach (var item in filtered) Items.Add(item);
         TotalCount = Items.Count;
     }
 
@@ -182,33 +190,42 @@ public partial class WebResourcesViewModel : ObservableObject
     private string ResolveUrl()
     {
         var typed = EnvironmentUrl.Trim().TrimEnd('/');
-        return !string.IsNullOrWhiteSpace(typed) ? typed : (_cfg.Dataverse?.Url?.TrimEnd('/') ?? "");
+        return !string.IsNullOrWhiteSpace(typed)
+            ? typed
+            : (_cfg.Dataverse?.Url?.TrimEnd('/') ?? "");
     }
 
-    private async Task<List<WebResource>> FetchAllPagesAsync(string initialUrl, string baseUrl)
+    /// <summary>
+    /// Busca todas as páginas OData usando HttpRequestMessage com URL absoluta.
+    /// Não modifica BaseAddress nem DefaultRequestHeaders do HttpClient compartilhado.
+    /// </summary>
+    private async Task<List<WebResource>> FetchAllPagesAsync(
+        string initialRelPath,
+        string apiBase,
+        Dictionary<string, string> authHeaders)
     {
         var all = new List<WebResource>();
         var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-        var apiBase = baseUrl.TrimEnd('/') + "/api/data/v9.2/";
-        string? next = initialUrl;
+        string? next = apiBase + initialRelPath;
 
         while (next is not null)
         {
             var requestUrl = next.StartsWith("http", StringComparison.OrdinalIgnoreCase)
-                ? next : apiBase + next;
+                ? next
+                : apiBase + next;
 
-            var resp = await _http.GetAsync(requestUrl);
+            var response = await SendRequestAsync(requestUrl, authHeaders);
 
-            if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
                 _auth.InvalidateCache();
-                await RefreshHeadersAsync(baseUrl);
-                resp = await _http.GetAsync(requestUrl);
+                authHeaders = await _auth.GetHeadersAsync(CancellationToken.None);
+                response = await SendRequestAsync(requestUrl, authHeaders);
             }
 
-            resp.EnsureSuccessStatusCode();
+            response.EnsureSuccessStatusCode();
 
-            var json = await resp.Content.ReadAsStringAsync();
+            var json = await response.Content.ReadAsStringAsync();
             var envelope = JsonSerializer.Deserialize<ODataResponse<RawWebResource>>(json, opts);
 
             if (envelope?.Value is not null)
@@ -220,6 +237,20 @@ public partial class WebResourcesViewModel : ObservableObject
         return all;
     }
 
+    private async Task<HttpResponseMessage> SendRequestAsync(
+        string url,
+        Dictionary<string, string> authHeaders)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        req.Headers.Add("Prefer", "odata.maxpagesize=100");
+        req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        foreach (var (key, value) in authHeaders)
+            req.Headers.TryAddWithoutValidation(key, value);
+
+        return await _http.SendAsync(req);
+    }
+
     private static WebResource Map(RawWebResource r) => new()
     {
         WebResourceId = r.WebResourceId ?? "",
@@ -228,20 +259,9 @@ public partial class WebResourcesViewModel : ObservableObject
         TypeCode = r.WebResourceType,
         IsManaged = r.IsManaged,
         ModifiedOn = DateTime.TryParse(r.ModifiedOn, null,
-                            System.Globalization.DateTimeStyles.RoundtripKind, out var dt) ? dt : default,
+                            System.Globalization.DateTimeStyles.RoundtripKind, out var dt)
+                        ? dt : default,
     };
-
-    private async Task RefreshHeadersAsync(string baseUrl)
-    {
-        _http.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/api/data/v9.2/");
-        _http.Timeout = TimeSpan.FromSeconds(60);
-
-        var headers = await _auth.GetHeadersAsync(CancellationToken.None);
-        _http.DefaultRequestHeaders.Clear();
-        _http.DefaultRequestHeaders.TryAddWithoutValidation("Prefer", "odata.maxpagesize=100");
-        foreach (var (k, v) in headers)
-            _http.DefaultRequestHeaders.TryAddWithoutValidation(k, v);
-    }
 
     private void UpdateStats()
     {
@@ -251,8 +271,6 @@ public partial class WebResourcesViewModel : ObservableObject
         CountOther = _all.Count(w => w.TypeCode is not (1 or 2 or 3));
     }
 
-    private void ResetStats()
-    {
+    private void ResetStats() =>
         CountJs = CountHtml = CountCss = CountOther = 0;
-    }
 }

@@ -363,9 +363,12 @@ public sealed class TodoKanbanView
 
         var item = _dragItem;
 
+        // Mesma coluna — não faz nada
+        if (_itemColumns.TryGetValue(item.Id, out var current) && current == targetCol)
+            return;
+
         if (targetCol == KanbanColumn.Concluido && !item.Done)
         {
-            // Show confirm dialog
             var confirmed = false;
             if (_rootGrid != null)
             {
@@ -374,20 +377,21 @@ public sealed class TodoKanbanView
                     onCancel: () => confirmed = false);
 
                 _rootGrid.Children.Add(overlay);
-
                 var frame = new System.Windows.Threading.DispatcherFrame();
                 ((FrameworkElement)overlay).Tag = frame;
                 System.Windows.Threading.Dispatcher.PushFrame(frame);
             }
 
             if (!confirmed) return;
-            if (!item.Done) _vm.ToggleCommand.Execute(item);
-        }
-        else if (targetCol != KanbanColumn.Concluido && item.Done)
-        {
-            _vm.ToggleCommand.Execute(item);
         }
 
+        // Aplica coluna + sincroniza Done/DoneAt no item
+        KanbanColumnMeta.ApplyToItem(item, targetCol.Value);
+
+        // Persiste via ViewModel
+        _vm.UpdateKanbanStatusCommand.Execute(item);
+
+        // Atualiza mapa visual e repopula
         _itemColumns[item.Id] = targetCol.Value;
         Populate(_vm.Items);
         _onItemChanged();

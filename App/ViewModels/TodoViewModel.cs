@@ -215,4 +215,24 @@ public partial class TodoViewModel : ObservableObject
         FormCategory = "Chamado";
         FormTicketId = ticketId;
     }
+
+    [RelayCommand]
+    public void UpdateKanbanStatus(TodoItem item)
+    {
+        // Sincroniza Done se necessário
+        if (item.Done != (_all.FirstOrDefault(t => t.Id == item.Id)?.Done ?? item.Done))
+        {
+            _storage.ToggleTodo(item.Id, item.Done);
+        }
+
+        // Persiste KanbanStatus + todos os campos via SaveTodo
+        _storage.SaveTodo(item);
+
+        // Atualiza o item na lista _all
+        var idx = _all.FindIndex(t => t.Id == item.Id);
+        if (idx >= 0) _all[idx] = item;
+
+        ApplyFilter();
+        UpdateCounters();
+    }
 }

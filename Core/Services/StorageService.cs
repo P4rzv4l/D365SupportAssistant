@@ -83,16 +83,17 @@ public class StorageService : IDisposable
             CREATE INDEX IF NOT EXISTS idx_alerts_incident ON alert_history(incident_id);
             CREATE INDEX IF NOT EXISTS idx_te_ticket       ON time_entries(ticket_id);
             CREATE TABLE IF NOT EXISTS todos (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                title       TEXT NOT NULL,
-                description TEXT DEFAULT '',
-                category    TEXT DEFAULT 'Geral',
-                priority    INTEGER DEFAULT 2,
-                done        INTEGER DEFAULT 0,
-                created_at  TEXT NOT NULL,
-                due_date    TEXT,
-                done_at     TEXT,
-                ticket_id   TEXT
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                title          TEXT NOT NULL,
+                description    TEXT DEFAULT '',
+                category       TEXT DEFAULT 'Geral',
+                priority       INTEGER DEFAULT 2,
+                done           INTEGER DEFAULT 0,
+                created_at     TEXT NOT NULL,
+                due_date       TEXT,
+                done_at        TEXT,
+                ticket_id      TEXT,
+                kanban_status  TEXT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_todos_done ON todos(done);
             CREATE TABLE IF NOT EXISTS notes (
@@ -109,6 +110,7 @@ public class StorageService : IDisposable
             CREATE INDEX IF NOT EXISTS idx_notes_incident ON notes(incident_id);
         ");
 
+        // ── Migrações incrementais ────────────────────────────────────────────
         foreach (var sql in new[]
         {
             "ALTER TABLE incidents ADD COLUMN bzp_nome_cliente TEXT",
@@ -124,6 +126,8 @@ public class StorageService : IDisposable
             "ALTER TABLE incidents ADD COLUMN bz_status_kpi_resolveby INTEGER",
             "ALTER TABLE incidents ADD COLUMN created_on TEXT",
             "ALTER TABLE incidents ADD COLUMN customer_satisfaction_code INTEGER",
+            // ── Kanban ────────────────────────────────────────────────────────
+            "ALTER TABLE todos ADD COLUMN kanban_status TEXT NULL",
         })
         {
             try { conn.Execute(sql); }
@@ -224,11 +228,6 @@ public class StorageService : IDisposable
         }
     }
 
-    /// <summary>
-    /// Marca como encerrado (state_code=1) todo chamado que estava ativo no banco
-    /// mas não está na lista de IDs retornados pelo Dataverse neste ciclo.
-    /// Retorna quantos foram encerrados.
-    /// </summary>
     public int MarkClosedExcept(IEnumerable<string> activeIncidentIds)
     {
         var ids = activeIncidentIds.ToHashSet();
@@ -237,7 +236,6 @@ public class StorageService : IDisposable
             using var conn = Open();
             using var tx = conn.BeginTransaction();
 
-            // Busca todos os que estão ativos no banco
             using var sel = conn.CreateCommand();
             sel.Transaction = tx;
             sel.CommandText = "SELECT incident_id FROM incidents WHERE state_code=0";
@@ -245,7 +243,6 @@ public class StorageService : IDisposable
             using (var r = sel.ExecuteReader())
                 while (r.Read()) inDb.Add(r.GetString(0));
 
-            // Quem estava ativo e não voltou → encerrado
             var toClose = inDb.Where(id => !ids.Contains(id)).ToList();
             foreach (var id in toClose)
             {
@@ -320,7 +317,6 @@ public class StorageService : IDisposable
                 ("@id", incidentId), ("@type", type.ToString().ToLower()),
                 ("@at", UtcNow()), ("@msg", message), ("@ch", channel));
 
-            // Mantém no máximo 100 registros — apaga os mais antigos
             conn.Execute(@"
                 DELETE FROM alert_history
                 WHERE id IN (
@@ -500,13 +496,164 @@ public class StorageService : IDisposable
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
                 SELECT id,ticket_id,title,start_time,end_time,duration,is_active,COALESCE(description,'')
-                FROM time_entries
-                ORDER BY start_time";
+                FROM time_entries ORDER BY start_time";
             return ReadEntries(cmd);
         }
     }
 
-    // ── Helpers internos ──────────────────────────────────────────────────────
+    // ── TODO CRUD ─────────────────────────────────────────────────────────────
+
+    public List<Core.Models.Todo.TodoItem> GetAllTodos()
+    {
+        lock (_lock)
+        {
+            using var conn = Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                SELECT id,title,description,category,priority,done,
+                       created_at,due_date,done_at,ticket_id,
+                       kanban_status
+                FROM todos
+                ORDER BY done ASC, priority ASC, created_at DESC";
+            return ReadTodos(cmd);
+        }
+    }
+
+    public Core.Models.Todo.TodoItem SaveTodo(Core.Models.Todo.TodoItem item)
+    {
+        lock (_lock)
+        {
+            using var conn = Open();
+            if (item.Id == 0)
+            {
+                conn.Execute(@"
+                    INSERT INTO todos
+                        (title,description,category,priority,done,
+                         created_at,due_date,done_at,ticket_id,kanban_status)
+                    VALUES
+                        (@title,@desc,@cat,@pri,@done,
+                         @created,@due,@doneat,@ticket,@kanban)",
+                    ("@title", item.Title),
+                    ("@desc", item.Description),
+                    ("@cat", item.Category),
+                    ("@pri", item.Priority),
+                    ("@done", item.Done ? 1 : 0),
+                    ("@created", item.CreatedAt.ToString("o")),
+                    ("@due", item.DueDate?.ToString("o")),
+                    ("@doneat", item.DoneAt?.ToString("o")),
+                    ("@ticket", item.TicketId),
+                    ("@kanban", item.KanbanStatus));
+                item.Id = (int)conn.LastInsertRowId();
+            }
+            else
+            {
+                conn.Execute(@"
+                    UPDATE todos SET
+                        title=@title, description=@desc, category=@cat,
+                        priority=@pri, done=@done, due_date=@due,
+                        done_at=@doneat, ticket_id=@ticket,
+                        kanban_status=@kanban
+                    WHERE id=@id",
+                    ("@title", item.Title),
+                    ("@desc", item.Description),
+                    ("@cat", item.Category),
+                    ("@pri", item.Priority),
+                    ("@done", item.Done ? 1 : 0),
+                    ("@due", item.DueDate?.ToString("o")),
+                    ("@doneat", item.DoneAt?.ToString("o")),
+                    ("@ticket", item.TicketId),
+                    ("@kanban", item.KanbanStatus),
+                    ("@id", item.Id));
+            }
+            return item;
+        }
+    }
+
+    public void DeleteTodo(int id)
+    {
+        lock (_lock)
+        {
+            using var conn = Open();
+            conn.Execute("DELETE FROM todos WHERE id=@id", ("@id", id));
+        }
+    }
+
+    public void ToggleTodo(int id, bool done)
+    {
+        lock (_lock)
+        {
+            using var conn = Open();
+            var doneAt = done ? DateTime.Now.ToString("o") : (object)DBNull.Value;
+            conn.Execute("UPDATE todos SET done=@done, done_at=@doneat WHERE id=@id",
+                ("@done", done ? 1 : 0),
+                ("@doneat", doneAt),
+                ("@id", id));
+        }
+    }
+
+    // ── Notes CRUD ────────────────────────────────────────────────────────────
+
+    public List<Core.Models.Notes.Note> GetAllNotes()
+    {
+        lock (_lock)
+        {
+            using var conn = Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT id,title,content,incident_id,incident_title,ticket_number,color,created_at,updated_at FROM notes ORDER BY updated_at DESC";
+            return ReadNotes(cmd);
+        }
+    }
+
+    public Core.Models.Notes.Note SaveNote(Core.Models.Notes.Note note)
+    {
+        lock (_lock)
+        {
+            using var conn = Open();
+            note.UpdatedAt = DateTime.Now;
+            if (note.Id == 0)
+            {
+                note.CreatedAt = DateTime.Now;
+                conn.Execute(@"
+                    INSERT INTO notes (title,content,incident_id,incident_title,ticket_number,color,created_at,updated_at)
+                    VALUES (@ti,@co,@inc,@inctitle,@tkt,@color,@ca,@ua)",
+                    ("@ti", note.Title),
+                    ("@co", note.Content),
+                    ("@inc", (object?)note.IncidentId ?? DBNull.Value),
+                    ("@inctitle", (object?)note.IncidentTitle ?? DBNull.Value),
+                    ("@tkt", (object?)note.TicketNumber ?? DBNull.Value),
+                    ("@color", note.Color),
+                    ("@ca", note.CreatedAt.ToString("o")),
+                    ("@ua", note.UpdatedAt.ToString("o")));
+                note.Id = (int)conn.LastInsertRowId();
+            }
+            else
+            {
+                conn.Execute(@"
+                    UPDATE notes SET title=@ti,content=@co,incident_id=@inc,incident_title=@inctitle,
+                        ticket_number=@tkt,color=@color,updated_at=@ua WHERE id=@id",
+                    ("@ti", note.Title),
+                    ("@co", note.Content),
+                    ("@inc", (object?)note.IncidentId ?? DBNull.Value),
+                    ("@inctitle", (object?)note.IncidentTitle ?? DBNull.Value),
+                    ("@tkt", (object?)note.TicketNumber ?? DBNull.Value),
+                    ("@color", note.Color),
+                    ("@ua", note.UpdatedAt.ToString("o")),
+                    ("@id", note.Id));
+            }
+            return note;
+        }
+    }
+
+    public void DeleteNote(int id)
+    {
+        lock (_lock)
+        {
+            using var conn = Open();
+            conn.Execute("DELETE FROM notes WHERE id=@id", ("@id", id));
+        }
+    }
+
+    // ── Helpers privados ──────────────────────────────────────────────────────
 
     private SqliteConnection Open()
     {
@@ -541,8 +688,8 @@ public class StorageService : IDisposable
             BzStatusKpiFirst = n > 18 && !r.IsDBNull(18) ? r.GetInt32(18) : null,
             BzStatusKpiResolveby = n > 19 && !r.IsDBNull(19) ? r.GetInt32(19) : null,
             CreatedOn = n > 20 && !r.IsDBNull(20)
-                                        ? DateTime.Parse(r.GetString(20))
-                                        : default,
+                                           ? DateTime.Parse(r.GetString(20))
+                                           : default,
             CustomerSatisfactionCode = n > 21 && !r.IsDBNull(21) ? r.GetInt32(21) : null,
         };
     }
@@ -565,68 +712,28 @@ public class StorageService : IDisposable
         return list;
     }
 
-    private static string UtcNow() => DateTime.UtcNow.ToString("o");
-
-    public void Dispose() { }
-
-    // ── Notes CRUD ────────────────────────────────────────────────────────────────
-
-    public List<Core.Models.Notes.Note> GetAllNotes()
+    private static List<Core.Models.Todo.TodoItem> ReadTodos(SqliteCommand cmd)
     {
-        lock (_lock)
+        var list = new List<Core.Models.Todo.TodoItem>();
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
         {
-            using var conn = Open();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT id,title,content,incident_id,incident_title,ticket_number,color,created_at,updated_at FROM notes ORDER BY updated_at DESC";
-            return ReadNotes(cmd);
-        }
-    }
-
-    public Core.Models.Notes.Note SaveNote(Core.Models.Notes.Note note)
-    {
-        lock (_lock)
-        {
-            using var conn = Open();
-            note.UpdatedAt = DateTime.Now;
-            if (note.Id == 0)
+            list.Add(new Core.Models.Todo.TodoItem
             {
-                note.CreatedAt = DateTime.Now;
-                conn.Execute(@"
-                    INSERT INTO notes (title,content,incident_id,incident_title,ticket_number,color,created_at,updated_at)
-                    VALUES (@ti,@co,@inc,@inctitle,@tkt,@color,@ca,@ua)",
-                    ("@ti", note.Title), ("@co", note.Content),
-                    ("@inc", (object?)note.IncidentId ?? DBNull.Value),
-                    ("@inctitle", (object?)note.IncidentTitle ?? DBNull.Value),
-                    ("@tkt", (object?)note.TicketNumber ?? DBNull.Value),
-                    ("@color", note.Color),
-                    ("@ca", note.CreatedAt.ToString("o")),
-                    ("@ua", note.UpdatedAt.ToString("o")));
-                note.Id = (int)conn.LastInsertRowId();
-            }
-            else
-            {
-                conn.Execute(@"
-                    UPDATE notes SET title=@ti,content=@co,incident_id=@inc,incident_title=@inctitle,
-                        ticket_number=@tkt,color=@color,updated_at=@ua WHERE id=@id",
-                    ("@ti", note.Title), ("@co", note.Content),
-                    ("@inc", (object?)note.IncidentId ?? DBNull.Value),
-                    ("@inctitle", (object?)note.IncidentTitle ?? DBNull.Value),
-                    ("@tkt", (object?)note.TicketNumber ?? DBNull.Value),
-                    ("@color", note.Color),
-                    ("@ua", note.UpdatedAt.ToString("o")),
-                    ("@id", note.Id));
-            }
-            return note;
+                Id = r.GetInt32(r.GetOrdinal("id")),
+                Title = r.GetString(r.GetOrdinal("title")),
+                Description = r.IsDBNull(r.GetOrdinal("description")) ? "" : r.GetString(r.GetOrdinal("description")),
+                Category = r.IsDBNull(r.GetOrdinal("category")) ? "Geral" : r.GetString(r.GetOrdinal("category")),
+                Priority = r.GetInt32(r.GetOrdinal("priority")),
+                Done = r.GetInt32(r.GetOrdinal("done")) == 1,
+                CreatedAt = DateTime.Parse(r.GetString(r.GetOrdinal("created_at"))),
+                DueDate = r.IsDBNull(r.GetOrdinal("due_date")) ? null : DateTime.Parse(r.GetString(r.GetOrdinal("due_date"))),
+                DoneAt = r.IsDBNull(r.GetOrdinal("done_at")) ? null : DateTime.Parse(r.GetString(r.GetOrdinal("done_at"))),
+                TicketId = r.IsDBNull(r.GetOrdinal("ticket_id")) ? null : r.GetString(r.GetOrdinal("ticket_id")),
+                KanbanStatus = r.IsDBNull(r.GetOrdinal("kanban_status")) ? null : r.GetString(r.GetOrdinal("kanban_status")),
+            });
         }
-    }
-
-    public void DeleteNote(int id)
-    {
-        lock (_lock)
-        {
-            using var conn = Open();
-            conn.Execute("DELETE FROM notes WHERE id=@id", ("@id", id));
-        }
+        return list;
     }
 
     private static List<Core.Models.Notes.Note> ReadNotes(SqliteCommand cmd)
@@ -649,106 +756,9 @@ public class StorageService : IDisposable
         return list;
     }
 
-    // ── Extension helpers ─────────────────────────────────────────────────────────
+    private static string UtcNow() => DateTime.UtcNow.ToString("o");
 
-    // ── TODO CRUD ─────────────────────────────────────────────────────────────
-
-    public List<Core.Models.Todo.TodoItem> GetAllTodos()
-    {
-        lock (_lock)
-        {
-            using var conn = Open();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT * FROM todos ORDER BY done ASC, priority ASC, created_at DESC";
-            return ReadTodos(cmd);
-        }
-    }
-
-    public Core.Models.Todo.TodoItem SaveTodo(Core.Models.Todo.TodoItem item)
-    {
-        lock (_lock)
-        {
-            using var conn = Open();
-            if (item.Id == 0)
-            {
-                conn.Execute(@"
-                    INSERT INTO todos (title,description,category,priority,done,created_at,due_date,done_at,ticket_id)
-                    VALUES (@title,@desc,@cat,@pri,@done,@created,@due,@doneat,@ticket)",
-                    ("@title", item.Title),
-                    ("@desc", item.Description),
-                    ("@cat", item.Category),
-                    ("@pri", item.Priority),
-                    ("@done", item.Done ? 1 : 0),
-                    ("@created", item.CreatedAt.ToString("o")),
-                    ("@due", item.DueDate?.ToString("o")),
-                    ("@doneat", item.DoneAt?.ToString("o")),
-                    ("@ticket", item.TicketId));
-                item.Id = (int)conn.LastInsertRowId();
-            }
-            else
-            {
-                conn.Execute(@"
-                    UPDATE todos SET title=@title, description=@desc, category=@cat,
-                        priority=@pri, done=@done, due_date=@due, done_at=@doneat, ticket_id=@ticket
-                    WHERE id=@id",
-                    ("@title", item.Title),
-                    ("@desc", item.Description),
-                    ("@cat", item.Category),
-                    ("@pri", item.Priority),
-                    ("@done", item.Done ? 1 : 0),
-                    ("@due", item.DueDate?.ToString("o")),
-                    ("@doneat", item.DoneAt?.ToString("o")),
-                    ("@ticket", item.TicketId),
-                    ("@id", item.Id));
-            }
-            return item;
-        }
-    }
-
-    public void DeleteTodo(int id)
-    {
-        lock (_lock)
-        {
-            using var conn = Open();
-            conn.Execute("DELETE FROM todos WHERE id=@id", ("@id", id));
-        }
-    }
-
-    public void ToggleTodo(int id, bool done)
-    {
-        lock (_lock)
-        {
-            using var conn = Open();
-            var doneAt = done ? DateTime.Now.ToString("o") : (object)DBNull.Value;
-            conn.Execute("UPDATE todos SET done=@done, done_at=@doneat WHERE id=@id",
-                ("@done", done ? 1 : 0),
-                ("@doneat", doneAt),
-                ("@id", id));
-        }
-    }
-
-    private static List<Core.Models.Todo.TodoItem> ReadTodos(Microsoft.Data.Sqlite.SqliteCommand cmd)
-    {
-        var list = new List<Core.Models.Todo.TodoItem>();
-        using var reader = cmd.ExecuteReader();
-        while (reader.Read())
-        {
-            list.Add(new Core.Models.Todo.TodoItem
-            {
-                Id = reader.GetInt32(reader.GetOrdinal("id")),
-                Title = reader.GetString(reader.GetOrdinal("title")),
-                Description = reader.IsDBNull(reader.GetOrdinal("description")) ? "" : reader.GetString(reader.GetOrdinal("description")),
-                Category = reader.IsDBNull(reader.GetOrdinal("category")) ? "Geral" : reader.GetString(reader.GetOrdinal("category")),
-                Priority = reader.GetInt32(reader.GetOrdinal("priority")),
-                Done = reader.GetInt32(reader.GetOrdinal("done")) == 1,
-                CreatedAt = DateTime.Parse(reader.GetString(reader.GetOrdinal("created_at"))),
-                DueDate = reader.IsDBNull(reader.GetOrdinal("due_date")) ? null : DateTime.Parse(reader.GetString(reader.GetOrdinal("due_date"))),
-                DoneAt = reader.IsDBNull(reader.GetOrdinal("done_at")) ? null : DateTime.Parse(reader.GetString(reader.GetOrdinal("done_at"))),
-                TicketId = reader.IsDBNull(reader.GetOrdinal("ticket_id")) ? null : reader.GetString(reader.GetOrdinal("ticket_id")),
-            });
-        }
-        return list;
-    }
+    public void Dispose() { }
 }
 
 internal static class SqliteExtensions
