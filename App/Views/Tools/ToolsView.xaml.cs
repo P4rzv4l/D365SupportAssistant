@@ -20,6 +20,8 @@ using D365Assistant.ViewModels;
 using D365Assistant.Views.Tools.Components;
 using D365Assistant.Views.Tools.Sections;
 using D365Assistant.Views.Tools.Theme;
+using D365Assistant.Core.Services;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -29,6 +31,7 @@ public partial class ToolsView : Page
 {
     // ── Dependencies ──────────────────────────────────────────────────────────
     private readonly WebResourcesViewModel _vm;
+    private readonly WebResourcesPanelBuilder _webResourcesBuilder;
 
     // ── Tab refs ──────────────────────────────────────────────────────────────
     private Button _tabFlows = null!;
@@ -47,9 +50,15 @@ public partial class ToolsView : Page
     //  CONSTRUCTOR
     // ══════════════════════════════════════════════════════════════════════════
 
-    public ToolsView(WebResourcesViewModel vm)
+    public ToolsView(
+        WebResourcesViewModel vm,
+        HttpClient http,
+        IExternalAuthService auth,
+        VaultViewModel vault,
+        VaultService vaultService)
     {
         _vm = vm;
+        _webResourcesBuilder = new WebResourcesPanelBuilder(vm, http, auth, vault, vaultService);
         DataContext = vm;
         Title = "Ferramentas";
         Background = ToolsTheme.Brush(ToolsTheme.Bg);
@@ -68,8 +77,7 @@ public partial class ToolsView : Page
         DockPanel.SetDock(_panelFlows, Dock.Top);
         root.Children.Add(_panelFlows);
 
-        _panelWebRes = BuildPanel(
-            new WebResourcesPanelBuilder(_vm).Build(), visible: true);
+        _panelWebRes = BuildPanel(_webResourcesBuilder.Build(), visible: true);
         root.Children.Add(_panelWebRes);
 
         Content = root;

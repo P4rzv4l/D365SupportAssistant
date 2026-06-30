@@ -6,6 +6,10 @@ using D365Assistant.Core.Models.WebResource;
 using D365Assistant.ViewModels;
 using D365Assistant.Views.Tools.Components;
 using D365Assistant.Views.Tools.Theme;
+using D365Assistant.Views.Tools.Sections.Viewer;
+using D365Assistant.Views.Tools.Sections.Comparator;
+using D365Assistant.Core.Services;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -19,8 +23,14 @@ namespace D365Assistant.Views.Tools.Sections;
 public sealed class WebResourcesPanelBuilder
 {
     private readonly WebResourcesViewModel _vm;
+    private readonly HttpClient _http;
+    private readonly IExternalAuthService _auth;
+    private readonly VaultViewModel _vault;
+    private readonly VaultService _vaultService;
     private WebResourceTableBuilder? _table;
     private WebResourceDetailPanel? _detail;
+    private WebResourceViewerOverlay? _viewer;
+    private WebResourceComparatorOverlay? _comparator;
 
     private string _localSearch = "";
     private int? _typeFilter = null;
@@ -29,17 +39,34 @@ public sealed class WebResourcesPanelBuilder
     private readonly Dictionary<string, Button> _filterBtns = [];
     private TextBox? _localSearchBox;
 
-    public WebResourcesPanelBuilder(WebResourcesViewModel vm)
+    public WebResourcesPanelBuilder(
+        WebResourcesViewModel vm,
+        HttpClient http,
+        IExternalAuthService auth,
+        VaultViewModel vault,
+        VaultService vaultService)
     {
         _vm = vm;
+        _http = http;
+        _auth = auth;
+        _vault = vault;
+        _vaultService = vaultService;
         _vm.Items.CollectionChanged += (_, _) => ApplyLocalFilters();
     }
 
     public UIElement Build()
     {
-        _detail = new WebResourceDetailPanel(_vm);
+        _viewer = new WebResourceViewerOverlay(_http, _auth);
+        _comparator = new WebResourceComparatorOverlay(_http, _auth, _vault, _vaultService);
+
+        _detail = new WebResourceDetailPanel(
+            _vm,
+            onViewContent: async r => await _viewer.ShowAsync(r, _vm.EnvironmentUrl),
+            onCompare: r => _comparator.Show(r));
+
         _table = new WebResourceTableBuilder(item => _detail.Show(item));
 
+        // Root grid: [left panel] [detail] [viewer overlay] [comparator overlay]
         var root = new Grid();
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -50,6 +77,15 @@ public sealed class WebResourcesPanelBuilder
 
         Grid.SetColumn(_detail.Root, 1);
         root.Children.Add(_detail.Root);
+
+        // Overlays span full grid (col 0 + col 1)
+        Grid.SetColumn(_viewer.Root, 0);
+        Grid.SetColumnSpan(_viewer.Root, 2);
+        root.Children.Add(_viewer.Root);
+
+        Grid.SetColumn(_comparator.Root, 0);
+        Grid.SetColumnSpan(_comparator.Root, 2);
+        root.Children.Add(_comparator.Root);
 
         return root;
     }

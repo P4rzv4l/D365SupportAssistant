@@ -63,6 +63,7 @@ public partial class App : Application
                 services.AddHttpClient<DataverseService>();
                 services.AddHttpClient<NotifierService>();
                 services.AddHttpClient<GeminiService>();
+                services.AddSingleton<IExternalAuthService, ExternalAuthService>();
                 services.AddHttpClient<WebResourcesViewModel>((sp, client) =>
                 {
                     var cfg = sp.GetRequiredService<AppSettings>();

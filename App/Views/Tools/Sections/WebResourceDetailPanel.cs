@@ -6,6 +6,8 @@ using D365Assistant.Core.Models.WebResource;
 using D365Assistant.ViewModels;
 using D365Assistant.Views.Tools.Components;
 using D365Assistant.Views.Tools.Theme;
+using D365Assistant.Views.Tools.Sections.Viewer;
+using D365Assistant.Views.Tools.Sections.Comparator;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
@@ -18,14 +20,21 @@ namespace D365Assistant.Views.Tools.Sections;
 public sealed class WebResourceDetailPanel
 {
     private readonly WebResourcesViewModel _vm;
+    private readonly Func<WebResource, Task>? _onViewContent;
+    private readonly Action<WebResource>? _onCompare;
     private readonly WpfBorder _panel;
     private readonly StackPanel _content;
 
     public WpfBorder Root => _panel;
 
-    public WebResourceDetailPanel(WebResourcesViewModel vm)
+    public WebResourceDetailPanel(
+        WebResourcesViewModel vm,
+        Func<WebResource, Task>? onViewContent = null,
+        Action<WebResource>? onCompare = null)
     {
         _vm = vm;
+        _onViewContent = onViewContent;
+        _onCompare = onCompare;
 
         _content = new StackPanel();
 
@@ -154,19 +163,19 @@ public sealed class WebResourceDetailPanel
             Padding = new Thickness(16, 10, 16, 10),
         };
 
-        var row = new StackPanel { Orientation = Orientation.Horizontal };
-        border.Child = row;
+        var wrap = new WrapPanel { Orientation = Orientation.Horizontal };
+        border.Child = wrap;
 
         // Copy name
         var btnCopyName = SmallButton("📋 Copiar nome", ToolsTheme.Accent);
         btnCopyName.Click += (_, _) => _vm.CopyNameCommand.Execute(r);
-        row.Children.Add(btnCopyName);
+        wrap.Children.Add(btnCopyName);
 
         // Copy ID
         var btnCopyId = SmallButton("🔑 Copiar ID", ToolsTheme.Surface2);
         btnCopyId.Margin = new Thickness(6, 0, 0, 0);
         btnCopyId.Click += (_, _) => _vm.CopyIdCommand.Execute(r);
-        row.Children.Add(btnCopyId);
+        wrap.Children.Add(btnCopyId);
 
         // Open in Dynamics
         var envUrl = _vm.EnvironmentUrl.TrimEnd('/');
@@ -178,7 +187,25 @@ public sealed class WebResourceDetailPanel
             btnOpen.ToolTip = "Abrir no Dynamics 365";
             btnOpen.Click += (_, _) =>
                 Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-            row.Children.Add(btnOpen);
+            wrap.Children.Add(btnOpen);
+        }
+
+        // View content (JS/CSS/HTML only)
+        if (_onViewContent != null && r.TypeCode is 1 or 2 or 3)
+        {
+            var btnView = SmallButton("👁 Ver conteúdo", ToolsTheme.Blue);
+            btnView.Margin = new Thickness(6, 4, 0, 0);
+            btnView.Click += async (_, _) => await _onViewContent(r);
+            wrap.Children.Add(btnView);
+        }
+
+        // Compare
+        if (_onCompare != null && r.TypeCode is 1 or 2 or 3)
+        {
+            var btnCompare = SmallButton("⚖ Comparar ambientes", ToolsTheme.Yellow);
+            btnCompare.Margin = new Thickness(6, 4, 0, 0);
+            btnCompare.Click += (_, _) => _onCompare(r);
+            wrap.Children.Add(btnCompare);
         }
 
         return border;

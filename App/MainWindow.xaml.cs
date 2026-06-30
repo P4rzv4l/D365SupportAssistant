@@ -5,6 +5,7 @@
 using D365Assistant.Core.Services;
 using D365Assistant.ViewModels;
 using D365Assistant.Views;
+using D365Assistant.Views.Dialogs;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using System.ComponentModel;
@@ -27,15 +28,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly TodoViewModel _todoVm;
     private readonly NotesViewModel _notesVm;
     private readonly IDataverseService _dataverse;
+    private readonly VaultViewModel _vaultVm;  // ← instância única compartilhada
+
     private string _userName = "Carregando...";
     public string UserName
     {
         get => _userName;
-        set
-        {
-            _userName = value;
-            OnPropertyChanged();
-        }
+        set { _userName = value; OnPropertyChanged(); }
     }
 
     private Button? _activeNavBtn;
@@ -55,7 +54,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         InitializeComponent();
 
-        // Define ícone via caminho absoluto (evita case-sensitivity do pack URI)
         try
         {
             var iconPath = System.IO.Path.Combine(AppContext.BaseDirectory, "App", "Assets", "logo-roxo.ico");
@@ -74,16 +72,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _webResourcesVm = webResourcesVm;
         _todoVm = todoVm;
         _notesVm = notesVm;
+        _dataverse = dataverse;
 
         _vm.DataRefreshed += OnDataRefreshed;
         _vm.MonitorError += OnMonitorError;
 
+        // Auth interna (tenant fixo do appsettings)
         var auth = App.Services.GetRequiredService<IAuthService>();
         auth.DeviceCodeRequired += OnDeviceCodeRequired;
 
+        // Auth externa (qualquer ambiente de cliente)
+        var externalAuth = App.Services.GetRequiredService<IExternalAuthService>();
+        externalAuth.DeviceCodeRequired += OnExternalDeviceCodeRequired;
+
+        // Vault — instância única compartilhada entre as telas Vault e Tools
+        _vaultVm = App.Services.GetRequiredService<VaultViewModel>();
+        _vaultVm.RequestUnlockDialog += isSetup => OnVaultUnlockRequested(isSetup);
+
         NavigateTo("Dashboard", BtnDashboard);
 
-        // Inicia monitoramento após a janela aparecer
         Loaded += async (_, _) =>
         {
             await _vm.StartMonitoringAsync();
@@ -92,12 +99,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var uiTimer = new System.Windows.Threading.DispatcherTimer
         {
-            Interval = TimeSpan.FromSeconds(1)
+            Interval = TimeSpan.FromSeconds(1),
         };
         uiTimer.Tick += (_, _) => UpdateTopBar();
         uiTimer.Start();
-
-        _dataverse = dataverse;
     }
 
     // ── Navegação ─────────────────────────────────────────────────────────────
@@ -116,17 +121,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 "Dashboard" => new DashboardView(_dashVm, _trackerVm, this),
                 "Tracker" => new TrackerView(_trackerVm, _trackerHistoryVm),
-
                 "Notes" => new NotesView(_notesVm),
                 "TrackerHistory" => new TrackerHistoryView(_trackerHistoryVm),
                 "Alerts" => new AlertsView(_alertsVm),
                 "AI" => new AIView(_aiVm),
-                "Tools" => new ToolsView(_webResourcesVm),
+                "Tools" => new ToolsView(
+                                       _webResourcesVm,
+                                       App.Services.GetRequiredService<System.Net.Http.HttpClient>(),
+                                       App.Services.GetRequiredService<IExternalAuthService>(),
+                                       _vaultVm,
+                                       App.Services.GetRequiredService<VaultService>()),
                 "Todo" => new TodoView(_todoVm),
-                "Vault" => new VaultView(
-                    App.Services.GetRequiredService<VaultViewModel>()),
-                "Settings" => new SettingsView(
-                    App.Services.GetRequiredService<SettingsViewModel>()),
+                "Vault" => new VaultView(_vaultVm),
+                "Settings" => new SettingsView(App.Services.GetRequiredService<SettingsViewModel>()),
                 _ => new DashboardView(_dashVm, _trackerVm, this),
             };
             _pages[pageName] = page;
@@ -183,13 +190,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
-
     protected void OnPropertyChanged([CallerMemberName] string? name = null)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-    }
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
-    // ── Device Flow ───────────────────────────────────────────────────────────
+    // ── Device Flow — auth interna (tenant fixo) ──────────────────────────────
 
     private void OnDeviceCodeRequired(object? sender, DeviceCodeEventArgs e)
     {
@@ -215,6 +219,30 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 "Autenticação — D365 Support Assistant",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
+        });
+    }
+
+    // ── Device Flow — auth externa (ambientes de cliente) ─────────────────────
+
+    private void OnExternalDeviceCodeRequired(object? sender, DeviceCodeEventArgs e)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            var dialog = new ExternalAuthDialog(e.UserCode, e.VerificationUrl, e.Message);
+            dialog.Owner = this;
+            dialog.ShowDialog();
+        });
+    }
+
+    // ── Vault — desbloqueio sob demanda (ex: ao abrir Comparador de Ambientes) ─
+
+    private void OnVaultUnlockRequested(bool isSetup)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            var dialog = new VaultUnlockDialog(this, isSetup);
+            if (dialog.ShowDialog() == true && dialog.Password != null)
+                _vaultVm.PerformUnlock(dialog.Password, isSetup);
         });
     }
 
@@ -275,10 +303,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var who = await _dataverse.WhoAmIAsync();
             var fullName = await _dataverse.GetUserFullNameAsync(who.UserId);
-
-            UserName = string.IsNullOrEmpty(fullName)
-                ? "Usuário"
-                : fullName;
+            UserName = string.IsNullOrEmpty(fullName) ? "Usuário" : fullName;
         }
         catch (Exception ex)
         {
@@ -287,8 +312,5 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void MainFrame_Navigated(object sender, System.Windows.Navigation.NavigationEventArgs e)
-    {
-
-    }
+    private void MainFrame_Navigated(object sender, System.Windows.Navigation.NavigationEventArgs e) { }
 }

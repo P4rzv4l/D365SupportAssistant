@@ -27,7 +27,7 @@ public record WebResourceTypeOption(int? Code, string Label)
 public partial class WebResourcesViewModel : ObservableObject
 {
     private readonly HttpClient _http;
-    private readonly IAuthService _auth;
+    private readonly IExternalAuthService _auth;  // ← agora usa IExternalAuthService
     private readonly AppSettings _cfg;
 
     private List<WebResource> _all = [];
@@ -65,7 +65,7 @@ public partial class WebResourcesViewModel : ObservableObject
         new(12,   "RESX"),
     ];
 
-    public WebResourcesViewModel(HttpClient http, IAuthService auth, AppSettings cfg)
+    public WebResourcesViewModel(HttpClient http, IExternalAuthService auth, AppSettings cfg)
     {
         _http = http;
         _auth = auth;
@@ -109,7 +109,7 @@ public partial class WebResourcesViewModel : ObservableObject
         try
         {
             // Obtém headers frescos a cada busca — sem mutar o HttpClient
-            var authHeaders = await _auth.GetHeadersAsync(CancellationToken.None);
+            var authHeaders = await _auth.GetHeadersAsync(baseUrl);
 
             var filters = new List<string> { $"contains(name,'{filtro}')" };
             if (SelectedType?.Code is int typeCode)
@@ -218,8 +218,8 @@ public partial class WebResourcesViewModel : ObservableObject
 
             if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
-                _auth.InvalidateCache();
-                authHeaders = await _auth.GetHeadersAsync(CancellationToken.None);
+                _auth.InvalidateCache(apiBase);
+                authHeaders = await _auth.GetHeadersAsync(apiBase);
                 response = await SendRequestAsync(requestUrl, authHeaders);
             }
 
