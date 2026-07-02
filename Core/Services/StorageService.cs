@@ -715,6 +715,7 @@ public class StorageService : IDisposable
                 End = r.IsDBNull(4) ? null : DateTime.Parse(r.GetString(4)),
                 Seconds = r.GetInt32(5),
                 IsActive = r.GetInt32(6) == 1,
+                Description = r.IsDBNull(7) ? "" : r.GetString(7)
             });
         return list;
     }
