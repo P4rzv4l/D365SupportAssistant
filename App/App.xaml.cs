@@ -41,6 +41,32 @@ public partial class App : Application
 
         Log.Information("D365 Support Assistant v2.0 iniciando...");
 
+        // ── 1.1 Handlers globais de exceção — sem isso, crash na inicialização
+        //       mata o processo em silêncio (nenhuma janela, nenhum aviso).
+        var logsDir = Path.Combine(DataDir, "logs");
+        this.DispatcherUnhandledException += (s, args) =>
+        {
+            Log.Fatal(args.Exception, "Exceção não tratada na UI thread");
+            MessageBox.Show(
+                $"Erro inesperado:\n\n{args.Exception.Message}\n\nDetalhes em:\n{logsDir}",
+                "D365 Support Assistant — Erro", MessageBoxButton.OK, MessageBoxImage.Error);
+            args.Handled = true;
+        };
+        AppDomain.CurrentDomain.UnhandledException += (s, args) =>
+        {
+            var ex = args.ExceptionObject as Exception;
+            Log.Fatal(ex, "Exceção fatal não tratada (AppDomain)");
+            Log.CloseAndFlush();
+            MessageBox.Show(
+                $"Erro fatal ao iniciar:\n\n{ex?.Message}\n\nDetalhes em:\n{logsDir}",
+                "D365 Support Assistant — Erro Fatal", MessageBoxButton.OK, MessageBoxImage.Error);
+        };
+        System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (s, args) =>
+        {
+            Log.Error(args.Exception, "Exceção não observada em Task");
+            args.SetObserved();
+        };
+
         // ── 2. Configuração ───────────────────────────────────────────────────
         _host = Host.CreateDefaultBuilder()
             .UseSerilog()
