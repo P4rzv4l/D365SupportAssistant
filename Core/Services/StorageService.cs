@@ -52,7 +52,8 @@ public class StorageService : IDisposable
                 bz_status_kpi_first    INTEGER,
                 bz_status_kpi_resolveby INTEGER,
                 created_on             TEXT,
-                customer_satisfaction_code INTEGER
+                customer_satisfaction_code INTEGER,
+                bz_first_response_date INTEGER DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS alert_history (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -126,6 +127,7 @@ public class StorageService : IDisposable
             "ALTER TABLE incidents ADD COLUMN bz_status_kpi_resolveby INTEGER",
             "ALTER TABLE incidents ADD COLUMN created_on TEXT",
             "ALTER TABLE incidents ADD COLUMN customer_satisfaction_code INTEGER",
+            "ALTER TABLE incidents ADD COLUMN bz_first_response_date INTEGER DEFAULT 0",
             // ── Kanban ────────────────────────────────────────────────────────
             "ALTER TABLE todos ADD COLUMN kanban_status TEXT NULL",
         })
@@ -184,9 +186,9 @@ public class StorageService : IDisposable
                         case_type_code,modified_on,first_seen_at,last_seen_at,alert_count,
                         bzp_nome_cliente,bzp_url,bz_horas_esgotadas,bz_sai,bz_motivo_status,
                         bz_total_horas,customer_name,bz_status_kpi_first,bz_status_kpi_resolveby,
-                        created_on,customer_satisfaction_code)
+                        created_on,customer_satisfaction_code,bz_first_response_date)
                     VALUES (@id,@tn,@t,@sc,@stc,@pc,@ctc,@mod,@first,@last,0,
-                        @bnc,@burl,@bhe,@bsai,@bms,@bth,@cn,@kpif,@kpir,@creon,@csat)
+                        @bnc,@burl,@bhe,@bsai,@bms,@bth,@cn,@kpif,@kpir,@creon,@csat,@bfrd)
                     ON CONFLICT(incident_id) DO UPDATE SET
                         ticket_number=excluded.ticket_number, title=excluded.title,
                         state_code=excluded.state_code, status_code=excluded.status_code,
@@ -199,7 +201,8 @@ public class StorageService : IDisposable
                         bz_status_kpi_first=excluded.bz_status_kpi_first,
                         bz_status_kpi_resolveby=excluded.bz_status_kpi_resolveby,
                         created_on=excluded.created_on,
-                        customer_satisfaction_code=excluded.customer_satisfaction_code";
+                        customer_satisfaction_code=excluded.customer_satisfaction_code,
+                        bz_first_response_date=excluded.bz_first_response_date";
 
                 upsert.Parameters.AddWithValue("@id", inc.IncidentId);
                 upsert.Parameters.AddWithValue("@tn", inc.TicketNumber);
@@ -222,6 +225,7 @@ public class StorageService : IDisposable
                 upsert.Parameters.AddWithValue("@kpir", (object?)inc.BzStatusKpiResolveby ?? DBNull.Value);
                 upsert.Parameters.AddWithValue("@creon", inc.CreatedOn == default ? DBNull.Value : inc.CreatedOn.ToString("o"));
                 upsert.Parameters.AddWithValue("@csat", (object?)inc.CustomerSatisfactionCode ?? DBNull.Value);
+                upsert.Parameters.AddWithValue("@bfrd", inc.BzFirstResponseDate ? 1 : 0);
                 upsert.ExecuteNonQuery();
             }
             tx.Commit();
@@ -271,7 +275,7 @@ public class StorageService : IDisposable
                        bzp_nome_cliente,bzp_url,bz_horas_esgotadas,bz_sai,
                        bz_motivo_status,bz_total_horas,customer_name,
                        bz_status_kpi_first,bz_status_kpi_resolveby,created_on,
-                       customer_satisfaction_code
+                       customer_satisfaction_code,bz_first_response_date
                 FROM incidents" +
                 (activeOnly ? " WHERE state_code=0" : "") +
                 " ORDER BY first_seen_at DESC";
@@ -295,7 +299,7 @@ public class StorageService : IDisposable
                        bzp_nome_cliente,bzp_url,bz_horas_esgotadas,bz_sai,
                        bz_motivo_status,bz_total_horas,customer_name,
                        bz_status_kpi_first,bz_status_kpi_resolveby,created_on,
-                       customer_satisfaction_code
+                       customer_satisfaction_code,bz_first_response_date
                 FROM incidents WHERE incident_id=@id";
             cmd.Parameters.AddWithValue("@id", incidentId);
             using var r = cmd.ExecuteReader();
@@ -691,6 +695,7 @@ public class StorageService : IDisposable
                                            ? DateTime.Parse(r.GetString(20))
                                            : default,
             CustomerSatisfactionCode = n > 21 && !r.IsDBNull(21) ? r.GetInt32(21) : null,
+            BzFirstResponseDate = n > 22 && !r.IsDBNull(22) && r.GetInt32(22) == 1,
         };
     }
 

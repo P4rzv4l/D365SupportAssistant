@@ -151,7 +151,7 @@ public sealed class IncidentRowBuilder
     private static void AddStatusCell(Grid grid, IncidentSnapshot snap)
     {
         var info = IncidentDisplayMappers.Status(snap.StatusCode);
-        var badge = UiFactory.Badge(info.Label, info.FgHex, info.BgHex,
+        var badge = UiFactory.Badge(info.Icon, info.Label, info.FgHex, info.BgHex,
                                    margin: new Thickness(0, 0, 12, 0));
         badge.VerticalAlignment = VerticalAlignment.Center;
         badge.HorizontalAlignment = HorizontalAlignment.Left;
@@ -161,7 +161,7 @@ public sealed class IncidentRowBuilder
     private static void AddPriorityCell(Grid grid, IncidentSnapshot snap)
     {
         var info = IncidentDisplayMappers.Priority(snap.PriorityCode);
-        var badge = UiFactory.Badge(info.Label, info.FgHex, info.BgHex,
+        var badge = UiFactory.Badge(info.Icon, info.Label, info.FgHex, info.BgHex,
                                    margin: new Thickness(0, 0, 12, 0));
         badge.VerticalAlignment = VerticalAlignment.Center;
         badge.HorizontalAlignment = HorizontalAlignment.Left;
@@ -196,10 +196,10 @@ public sealed class IncidentRowBuilder
 
     private static void AddSlaCell(Grid grid, IncidentSnapshot snap)
     {
-        var (text, fgHex, bgHex, tooltip) =
-            IncidentDisplayMappers.SlaTableBadge(snap.BzStatusKpiFirst);
+        var (icon, text, fgHex, bgHex, tooltip) =
+            IncidentDisplayMappers.SlaTableBadge(snap.BzStatusKpiFirst, snap.BzFirstResponseDate);
 
-        var badge = UiFactory.Badge(text, fgHex, bgHex, margin: new Thickness(0, 0, 8, 0));
+        var badge = UiFactory.Badge(icon, text, fgHex, bgHex, margin: new Thickness(0, 0, 8, 0));
         badge.VerticalAlignment = VerticalAlignment.Center;
         badge.HorizontalAlignment = HorizontalAlignment.Left;
         badge.ToolTip = tooltip;
@@ -209,7 +209,7 @@ public sealed class IncidentRowBuilder
     private void AddSatisfactionCell(Grid grid, IncidentSnapshot snap)
     {
         var info = IncidentDisplayMappers.Satisfaction(snap.CustomerSatisfactionCode);
-        var badge = UiFactory.Badge(info.Label, info.FgHex, info.BgHex,
+        var badge = UiFactory.Badge(info.Icon, info.Label, info.FgHex, info.BgHex,
                                    margin: new Thickness(8, 0, 8, 0));
         badge.VerticalAlignment = VerticalAlignment.Center;
         badge.Visibility = _showSatisfaction

@@ -24,6 +24,7 @@ namespace D365Assistant.Core.Models.Incident
         public DateTime LastSeenAt { get; set; }
         public bool IsEscalated { get; set; }
         public bool FirstResponseSent { get; set; }
+        public bool BzFirstResponseDate { get; set; }
         public string? BzpNomeCliente { get; set; }
         public string? BzpUrl { get; set; }
         public bool BzHorasEsgotadas { get; set; }
@@ -77,6 +78,7 @@ namespace D365Assistant.Core.Models.Incident
                 LastSeenAt = now,
                 IsEscalated = incident.IsEscalated,
                 FirstResponseSent = incident.FirstResponseSent,
+                BzFirstResponseDate = incident.BzFirstResponseDate,
                 BzpNomeCliente = incident.BzpNomeCliente,
                 BzpUrl = incident.BzpUrl,
                 BzHorasEsgotadas = incident.BzHorasEsgotadas,
@@ -117,6 +119,7 @@ namespace D365Assistant.Core.Models.Incident
             ModifiedOn = incident.ModifiedOn;
             IsEscalated = incident.IsEscalated;
             FirstResponseSent = incident.FirstResponseSent;
+            BzFirstResponseDate = incident.BzFirstResponseDate;
             BzpNomeCliente = incident.BzpNomeCliente;
             BzpUrl = incident.BzpUrl;
             BzHorasEsgotadas = incident.BzHorasEsgotadas;

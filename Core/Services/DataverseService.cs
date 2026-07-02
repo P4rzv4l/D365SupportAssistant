@@ -44,7 +44,7 @@ public class DataverseService : IDataverseService
         "bz_total_horas", "bz_horas_faturaveis",
         "bz_historico_ocorrencia", "bz_status_kpi_first",
         "bz_status_kpi_resolveby", "_entitlementid_value",
-        "customersatisfactioncode",
+        "customersatisfactioncode","bz_data_primeiro_contato",
     ];
 
     private static readonly string[] ExpandFields =
@@ -190,6 +190,8 @@ public class DataverseService : IDataverseService
         r.Extra.TryGetValue(
             "_customerid_value@OData.Community.Display.V1.FormattedValue", out var customerFallbackEl);
 
+        Log.Information("KPI FIRST: {r}", r.BzStatusKpiFirst);
+
         return new Incident
         {
             IncidentId = r.IncidentId ?? "",
@@ -205,6 +207,7 @@ public class DataverseService : IDataverseService
             ModifiedOn = ParseDate(r.ModifiedOn),
             IsEscalated = r.IsEscalated,
             FirstResponseSent = r.FirstResponseSent,
+            BzFirstResponseDate = !string.IsNullOrWhiteSpace(r.BzFirstResponseDate),
             BzpNomeCliente = r.BzpNomeCliente,
             BzpUrl = r.BzpUrl,
             BzHorasEsgotadas = r.BzHorasEsgotadas,
@@ -267,6 +270,7 @@ internal class RawIncident
     [JsonPropertyName("bz_status_kpi_resolveby")] public int? BzStatusKpiResolveby { get; set; }
     [JsonPropertyName("customersatisfactioncode")] public int? CustomerSatisfactionCode { get; set; }
     [JsonPropertyName("customerid_account")] public AccountRef? CustomerAccount { get; set; }
+    [JsonPropertyName("bz_data_primeiro_contato")] public string? BzFirstResponseDate { get; set; }
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement> Extra { get; set; } = [];

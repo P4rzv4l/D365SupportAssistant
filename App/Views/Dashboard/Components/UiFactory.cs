@@ -12,6 +12,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
+using FontAwesome.Sharp;
 
 namespace D365Assistant.Views.Dashboard.Components;
 
@@ -23,10 +24,72 @@ public static class UiFactory
     /// Badge colorido dark-mode. Aceita hex strings para manter compatibilidade
     /// com <see cref="Helpers.IncidentDisplayMappers"/>.
     /// </summary>
-    public static Border Badge(string text, string fgHex, string bgHex,
+    public static Border Badge(IconChar icon, string text, string fgHex, string bgHex,
                                Thickness? margin = null)
     {
+        //var fg = ParseColor(fgHex);
+        //return new Border
+        //{
+        //    Background = DashboardTheme.Brush(ParseColor(bgHex)),
+        //    BorderBrush = DashboardTheme.AlphaBrush(fg, 0x44),
+        //    BorderThickness = new Thickness(1),
+        //    CornerRadius = new CornerRadius(4),
+        //    Padding = new Thickness(8, 3, 8, 3),
+        //    Margin = margin ?? new Thickness(0),
+        //    Child = new TextBlock
+        //    {
+        //        Text = text,
+        //        FontSize = 10.5,
+        //        FontWeight = FontWeights.SemiBold,
+        //        Foreground = DashboardTheme.Brush(fg),
+        //    }
+        //};
+
         var fg = ParseColor(fgHex);
+
+        var grid = new Grid
+        {
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        grid.ColumnDefinitions.Add(new ColumnDefinition
+        {
+            Width = GridLength.Auto
+        });
+
+        grid.ColumnDefinitions.Add(new ColumnDefinition
+        {
+            Width = GridLength.Auto
+        });
+
+        var iconControl = new IconBlock
+        {
+            Icon = icon,
+            Width = 11,
+            Height = 11,
+            FontSize = 11,
+            Foreground = DashboardTheme.Brush(fg),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 0, 5, 0)
+        };
+
+        Grid.SetColumn(iconControl, 0);
+
+        var label = new TextBlock
+        {
+            Text = text,
+            FontSize = 10,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = DashboardTheme.Brush(fg),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        Grid.SetColumn(label, 1);
+
+        grid.Children.Add(iconControl);
+        grid.Children.Add(label);
+
         return new Border
         {
             Background = DashboardTheme.Brush(ParseColor(bgHex)),
@@ -35,13 +98,7 @@ public static class UiFactory
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(8, 3, 8, 3),
             Margin = margin ?? new Thickness(0),
-            Child = new TextBlock
-            {
-                Text = text,
-                FontSize = 10.5,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = DashboardTheme.Brush(fg),
-            }
+            Child = grid
         };
     }
 
@@ -60,18 +117,56 @@ public static class UiFactory
         Margin = new Thickness(8, 0, 0, 0),
     };
 
-    public static Button ActionButton(string label, Color accent) => new()
+    //public static Button ActionButton(IconChar icon,string label, Color accent) => new()
+    //{
+    //    Content = label,
+    //    FontSize = 11,
+    //    FontFamily = new FontFamily("Segoe UI Semibold"),
+    //    Background = DashboardTheme.AlphaBrush(accent, 0x20),
+    //    Foreground = DashboardTheme.Brush(accent),
+    //    BorderBrush = DashboardTheme.AlphaBrush(accent, 0x44),
+    //    BorderThickness = new Thickness(1),
+    //    Cursor = Cursors.Hand,
+    //    Padding = new Thickness(12, 6, 12, 6),
+    //};
+
+    public static Button ActionButton(IconChar icon, string label, Color accent)
     {
-        Content = label,
-        FontSize = 11,
-        FontFamily = new FontFamily("Segoe UI Semibold"),
-        Background = DashboardTheme.AlphaBrush(accent, 0x20),
-        Foreground = DashboardTheme.Brush(accent),
-        BorderBrush = DashboardTheme.AlphaBrush(accent, 0x44),
-        BorderThickness = new Thickness(1),
-        Cursor = Cursors.Hand,
-        Padding = new Thickness(12, 6, 12, 6),
-    };
+        var content = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        content.Children.Add(new IconBlock
+        {
+            Icon = icon,
+            Width = 14,
+            Height = 14,
+            Foreground = DashboardTheme.Brush(accent),
+            VerticalAlignment = VerticalAlignment.Center
+        });
+
+        content.Children.Add(new TextBlock
+        {
+            Text = label,
+            Margin = new Thickness(6, 0, 0, 0),
+            FontSize = 11,
+            FontFamily = new FontFamily("Segoe UI Semibold"),
+            Foreground = DashboardTheme.Brush(accent),
+            VerticalAlignment = VerticalAlignment.Center
+        });
+
+        return new Button
+        {
+            Content = content,
+            Background = DashboardTheme.AlphaBrush(accent, 0x20),
+            BorderBrush = DashboardTheme.AlphaBrush(accent, 0x44),
+            BorderThickness = new Thickness(1),
+            Cursor = Cursors.Hand,
+            Padding = new Thickness(12, 6, 12, 6)
+        };
+    }
 
     public static Button GhostButton(string label) => new()
     {

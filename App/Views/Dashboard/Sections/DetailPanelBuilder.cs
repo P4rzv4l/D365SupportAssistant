@@ -10,10 +10,12 @@ using D365Assistant.Core.Services;
 using D365Assistant.Views.Dashboard.Components;
 using D365Assistant.Views.Dashboard.Helpers;
 using D365Assistant.Views.Dashboard.Theme;
+using FontAwesome.Sharp;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using Serilog;
 
 namespace D365Assistant.Views.Dashboard.Sections;
 
@@ -81,10 +83,10 @@ public sealed class DetailPanelBuilder
         left.Children.Add(TicketNumberText(snap.TicketNumber));
 
         var priInfo = IncidentDisplayMappers.Priority(snap.PriorityCode);
-        left.Children.Add(UiFactory.Badge(priInfo.Label, priInfo.FgHex, priInfo.BgHex));
+        left.Children.Add(UiFactory.Badge(priInfo.Icon ,priInfo.Label, priInfo.FgHex, priInfo.BgHex));
 
         var stInfo = IncidentDisplayMappers.Status(snap.StatusCode);
-        left.Children.Add(UiFactory.Badge(stInfo.Label, stInfo.FgHex, stInfo.BgHex,
+        left.Children.Add(UiFactory.Badge(priInfo.Icon, stInfo.Label, stInfo.FgHex, stInfo.BgHex,
                                           margin: new Thickness(6, 0, 0, 0)));
 
         // Right: close button
@@ -127,15 +129,15 @@ public sealed class DetailPanelBuilder
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal };
 
-        var btnTimer = UiFactory.ActionButton("▶ Iniciar Tempo", DashboardTheme.Green);
+        var btnTimer = UiFactory.ActionButton(IconChar.Play, "Iniciar Tempo", DashboardTheme.Green);
         btnTimer.Click += (_, _) => _onStartTimer(snap.TicketNumber, snap.Title);
         row.Children.Add(btnTimer);
 
-        var btnPause = UiFactory.ActionButton("⏸ Pausar", DashboardTheme.TextSub);
+        var btnPause = UiFactory.ActionButton(IconChar.Pause, "Pausar", DashboardTheme.TextSub);
         btnPause.Margin = new Thickness(6, 0, 0, 0);
         row.Children.Add(btnPause);
 
-        var btnFinish = UiFactory.ActionButton("■ Finalizar", DashboardTheme.Red);
+        var btnFinish = UiFactory.ActionButton(IconChar.Stop, "Finalizar", DashboardTheme.Red);
         btnFinish.Margin = new Thickness(6, 0, 0, 0);
         row.Children.Add(btnFinish);
 
@@ -177,7 +179,7 @@ public sealed class DetailPanelBuilder
         InfoItem(left, "Cliente", OrDash(snap.CustomerDisplayName));
         InfoItem(left, "Aberto em", snap.CreatedOn.ToLocalTime().ToString("dd/MM/yyyy HH:mm"));
 
-        var sla = IncidentDisplayMappers.SlaDetail(snap.BzStatusKpiFirst, snap.FirstResponseSent);
+        var sla = IncidentDisplayMappers.SlaDetail(snap.BzStatusKpiFirst, snap.BzFirstResponseDate);
         InfoItem(left, "SLA 1º Atendimento", sla.Text, sla.Color);
 
         if (!string.IsNullOrEmpty(snap.Description))
@@ -392,14 +394,13 @@ public sealed class DetailPanelBuilder
         catch { return 0; }
     }
 
-    private static Border SectionBorder(Color bg, bool bottomBorder,
-                                        Thickness? padding = null) => new()
-                                        {
-                                            Background = DashboardTheme.Brush(bg),
-                                            BorderBrush = DashboardTheme.Brush(DashboardTheme.Border),
-                                            BorderThickness = bottomBorder ? new Thickness(0, 0, 0, 1) : new Thickness(0),
-                                            Padding = padding ?? new Thickness(16, 12, 16, 12),
-                                        };
+    private static Border SectionBorder(Color bg, bool bottomBorder, Thickness? padding = null) => new()
+    {
+        Background = DashboardTheme.Brush(bg),
+        BorderBrush = DashboardTheme.Brush(DashboardTheme.Border),
+        BorderThickness = bottomBorder ? new Thickness(0, 0, 0, 1) : new Thickness(0),
+        Padding = padding ?? new Thickness(16, 12, 16, 12),
+    };
 
     private static Grid TwoColumnGrid(Thickness? margin = null)
     {

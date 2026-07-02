@@ -21,6 +21,7 @@ namespace D365Assistant.Core.Models.Incident
         public DateTime ModifiedOn { get; set; }
         public bool IsEscalated { get; set; }
         public bool FirstResponseSent { get; set; }
+        public bool BzFirstResponseDate { get; set; }
         public string? BzpNomeCliente { get; set; }
         public string? BzpUrl { get; set; }
         public bool BzHorasEsgotadas { get; set; }
