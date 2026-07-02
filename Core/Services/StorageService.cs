@@ -15,8 +15,10 @@ public class StorageService : IDisposable
 
     public StorageService(AppSettings cfg)
     {
-        _dbPath = cfg.Database.Path;
-        Directory.CreateDirectory(Path.GetDirectoryName(_dbPath) ?? "data");
+        _dbPath = Path.IsPathRooted(cfg.Database.Path)
+            ? cfg.Database.Path
+            : Path.Combine(D365Assistant.App.DataDir, cfg.Database.Path);
+        Directory.CreateDirectory(Path.GetDirectoryName(_dbPath) ?? D365Assistant.App.DataDir);
     }
 
     // ── Inicialização ─────────────────────────────────────────────────────────
