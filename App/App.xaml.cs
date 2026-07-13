@@ -122,6 +122,7 @@ public partial class App : Application
                 services.AddTransient<WebResourcesViewModel>();
                 services.AddSingleton<TodoViewModel>();
                 services.AddSingleton<NotesViewModel>();
+                services.AddSingleton<FlowsViewModel>();
 
                 // Janela principal
                 services.AddSingleton<MainWindow>();

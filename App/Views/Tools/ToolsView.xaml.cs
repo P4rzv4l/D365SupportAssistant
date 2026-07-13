@@ -1,25 +1,12 @@
 ﻿// =============================================================================
 //  ToolsView.xaml.cs — Orquestrador do ToolsView (refatorado)
 // =============================================================================
-// Responsabilidade: montar layout raiz, gerenciar abas.
-// Nenhuma cor hardcoded, nenhum builder de painel aqui.
-//
-// Estrutura:
-//   Theme/
-//     ToolsTheme.cs                  — paleta de cores
-//   Components/
-//     ToolsUiFactory.cs              — primitivos de UI
-//     ToolsConverters.cs             — value converters
-//   Sections/
-//     FlowsPanelBuilder.cs           — painel placeholder de Fluxos
-//     WebResourcesPanelBuilder.cs    — painel de Recursos da Web
-//   ToolsView.xaml.cs                ← você está aqui
-// =============================================================================
 
 using D365Assistant.ViewModels;
 using D365Assistant.Views.Tools.Components;
 using D365Assistant.Views.Tools.Sections;
 using D365Assistant.Views.Tools.Theme;
+using D365Assistant.Views.Flows.Sections;
 using D365Assistant.Core.Services;
 using System.Net.Http;
 using System.Windows;
@@ -29,36 +16,32 @@ namespace D365Assistant.Views;
 
 public partial class ToolsView : Page
 {
-    // ── Dependencies ──────────────────────────────────────────────────────────
     private readonly WebResourcesViewModel _vm;
     private readonly WebResourcesPanelBuilder _webResourcesBuilder;
+    private readonly FlowsPanelBuilder _flowsBuilder;
 
-    // ── Tab refs ──────────────────────────────────────────────────────────────
     private Button _tabFlows = null!;
     private Button _tabWebRes = null!;
     private Border _panelFlows = null!;
     private Border _panelWebRes = null!;
 
-    // ── Tab labels ────────────────────────────────────────────────────────────
     private static class Tabs
     {
         public const string Flows = "⚡  Fluxos";
         public const string WebResources = "🌐  Recursos da Web";
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  CONSTRUCTOR
-    // ══════════════════════════════════════════════════════════════════════════
-
     public ToolsView(
         WebResourcesViewModel vm,
         HttpClient http,
         IExternalAuthService auth,
         VaultViewModel vault,
-        VaultService vaultService)
+        VaultService vaultService,
+        FlowsViewModel flowsVm)
     {
         _vm = vm;
         _webResourcesBuilder = new WebResourcesPanelBuilder(vm, http, auth, vault, vaultService);
+        _flowsBuilder = new FlowsPanelBuilder(flowsVm);
         DataContext = vm;
         Title = "Ferramentas";
         Background = ToolsTheme.Brush(ToolsTheme.Bg);
@@ -73,7 +56,7 @@ public partial class ToolsView : Page
         DockPanel.SetDock(tabBar, Dock.Top);
         root.Children.Add(tabBar);
 
-        _panelFlows = BuildPanel(FlowsPanelBuilder.Build(), visible: false);
+        _panelFlows = BuildPanel(_flowsBuilder.Build(), visible: false);
         DockPanel.SetDock(_panelFlows, Dock.Top);
         root.Children.Add(_panelFlows);
 
